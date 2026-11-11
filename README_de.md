@@ -1,6 +1,5 @@
 # GitHub Release Stats Card
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
 [![Version](https://img.shields.io/badge/version-1.2.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
@@ -23,16 +22,7 @@ Eine Lovelace-Karte für Home Assistant, die zeigt, wie oft die Dateien deiner G
 
 ## Installation
 
-### HACS (empfohlen)
-
-1. In HACS **⋮ → Benutzerdefinierte Repositories** öffnen.
-2. `https://github.com/nukleuz80/ha_github-release-stats-card` mit dem Typ **Dashboard** hinzufügen.
-3. Nach **GitHub Release Stats Card** suchen und herunterladen. HACS trägt die Ressource selbst ein.
-4. Den Browser neu laden.
-
-### Manuell
-
-1. `github-release-stats-card.js` nach `/config/www/` kopieren.
+1. [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) herunterladen und nach `/config/www/` kopieren.
 2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.2.1` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
 3. Den Browser neu laden. Nach einem Update `?v=` hochzählen, damit Browser die neue Version laden.
 
@@ -79,7 +69,7 @@ Gezählt werden nur Dateien, die an einem Release hängen. Die Quellcode-Archive
 
 | Version | Datum | Highlights |
 | :--- | :--- | :--- |
-| 1.2.1 | 11.11.2026 | Eigenes Repository mit HACS-Unterstützung. Eine Zählung behält den Zeitpunkt der GitHub-Antwort, eine zwischengespeicherte Antwort sieht nicht mehr wie neue Downloads aus |
+| 1.2.1 | 11.11.2026 | Eigenes Repository zur manuellen Installation. Eine Zählung behält den Zeitpunkt der GitHub-Antwort, eine zwischengespeicherte Antwort sieht nicht mehr wie neue Downloads aus |
 | 1.2.0 | 10.11.2026 | Downloads heute pro Repository und pro Release, Verlauf in den Home-Assistant-Benutzerdaten |
 | 1.1.0 | 10.11.2026 | Sterne, Forks, Issues, Commits, letzter Push, Commit-Aktivität über 12 Wochen |
 | 1.0.0 | 10.11.2026 | Erste Version: angeheftete Repositories, Suche, Downloads pro Release und Datei, ETag-Cache |

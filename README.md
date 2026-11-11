@@ -1,6 +1,5 @@
 # GitHub Release Stats Card
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
 [![Version](https://img.shields.io/badge/version-1.2.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
@@ -25,16 +24,7 @@ A Lovelace card for Home Assistant that shows how often the files of your GitHub
 
 ## Installation
 
-### HACS (recommended)
-
-1. In HACS, open **⋮ → Custom repositories**.
-2. Add `https://github.com/nukleuz80/ha_github-release-stats-card` with the type **Dashboard**.
-3. Search for **GitHub Release Stats Card** and download it. HACS adds the dashboard resource for you.
-4. Reload the browser.
-
-### Manual
-
-1. Copy `github-release-stats-card.js` to `/config/www/`.
+1. Download [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) and copy it to `/config/www/`.
 2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.2.1` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
 3. Reload the browser. When you update the file, raise `?v=` so browsers load the new version.
 
@@ -81,7 +71,7 @@ Only files attached to a release (assets) are counted. The source code archives 
 
 | Version | Date | Highlights |
 | :--- | :--- | :--- |
-| 1.2.1 | 2026-11-11 | Own repository with HACS support. A count keeps the time GitHub sent it, so a cached answer no longer looks like new downloads |
+| 1.2.1 | 2026-11-11 | Own repository for manual installation. A count keeps the time GitHub sent it, so a cached answer no longer looks like new downloads |
 | 1.2.0 | 2026-11-10 | Downloads today per repository and per release, history in the Home Assistant user data |
 | 1.1.0 | 2026-11-10 | Stars, forks, issues, commits, last push, commit activity of 12 weeks |
 | 1.0.0 | 2026-11-10 | First version: pinned repositories, search, downloads per release and file, ETag cache |
