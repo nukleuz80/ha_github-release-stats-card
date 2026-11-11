@@ -1,6 +1,6 @@
 # GitHub Release Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.2.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇬🇧 [English version](README.md)
@@ -23,7 +23,7 @@ Eine Lovelace-Karte für Home Assistant, die zeigt, wie oft die Dateien deiner G
 ## Installation
 
 1. [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) herunterladen und nach `/config/www/` kopieren.
-2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.2.1` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
+2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.3.0` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
 3. Den Browser neu laden. Nach einem Update `?v=` hochzählen, damit Browser die neue Version laden.
 
 ## Konfiguration
@@ -33,6 +33,7 @@ Eine Lovelace-Karte für Home Assistant, die zeigt, wie oft die Dateien deiner G
 ```yaml
 type: custom:github-release-stats-card
 title: GitHub Releases
+layout: modern # oder "classic" für das bisherige Layout
 repositories:
   - nukleuz80/ha_brainstorm
   - https://github.com/hacs/integration
@@ -41,6 +42,7 @@ repositories:
 | Option | Standard | Beschreibung |
 | :--- | :--- | :--- |
 | `title` | `GitHub Releases` | Titel der Karte |
+| `layout` | `classic` | Design-Layout: `classic` (bewährtes kompaktes Design) oder `modern` (Venus-Kacheldesign mit KPI-Tiles und Spline-Chart) |
 | `repositories` | `[]` | Repositories, die immer auf der Karte stehen, als `owner/repo` oder GitHub-Link |
 | `releases` | `5` | Angezeigte Releases pro Repository, der Rest hinter „Alle … anzeigen“ |
 | `refresh` | `60` | Minuten zwischen zwei Aktualisierungen (mindestens 5) |
@@ -69,6 +71,7 @@ Gezählt werden nur Dateien, die an einem Release hängen. Die Quellcode-Archive
 
 | Version | Datum | Highlights |
 | :--- | :--- | :--- |
+| 1.3.0 | 11.11.2026 | Neues optionales Modern-Design im Venus-Dashboard-Stil (KPI-Kacheln, Spline-Commit-Chart, Pill-Badges, Capsule-Progressbars), umschaltbar über `layout: classic` oder `modern` |
 | 1.2.1 | 11.11.2026 | Eigenes Repository zur manuellen Installation. Eine Zählung behält den Zeitpunkt der GitHub-Antwort, eine zwischengespeicherte Antwort sieht nicht mehr wie neue Downloads aus |
 | 1.2.0 | 10.11.2026 | Downloads heute pro Repository und pro Release, Verlauf in den Home-Assistant-Benutzerdaten |
 | 1.1.0 | 10.11.2026 | Sterne, Forks, Issues, Commits, letzter Push, Commit-Aktivität über 12 Wochen |

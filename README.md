@@ -1,6 +1,6 @@
 # GitHub Release Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.2.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇩🇪 [Deutsche Version](README_de.md)
@@ -25,7 +25,7 @@ A Lovelace card for Home Assistant that shows how often the files of your GitHub
 ## Installation
 
 1. Download [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) and copy it to `/config/www/`.
-2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.2.1` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
+2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.3.0` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
 3. Reload the browser. When you update the file, raise `?v=` so browsers load the new version.
 
 ## Configuration
@@ -35,6 +35,7 @@ Add the card with **Add card → GitHub Release Stats Card**, or in YAML:
 ```yaml
 type: custom:github-release-stats-card
 title: GitHub Releases
+layout: modern # or "classic" for the legacy layout
 repositories:
   - nukleuz80/ha_brainstorm
   - https://github.com/hacs/integration
@@ -43,6 +44,7 @@ repositories:
 | Option | Default | Description |
 | :--- | :--- | :--- |
 | `title` | `GitHub Releases` | Card title |
+| `layout` | `classic` | Layout style: `classic` (compact layout) or `modern` (Venus-inspired KPI grid & spline chart) |
 | `repositories` | `[]` | Repositories that always stay on the card, as `owner/repo` or a GitHub link |
 | `releases` | `5` | Releases shown per repository, the rest behind "Alle … anzeigen" |
 | `refresh` | `60` | Minutes between updates (at least 5) |
@@ -71,6 +73,7 @@ Only files attached to a release (assets) are counted. The source code archives 
 
 | Version | Date | Highlights |
 | :--- | :--- | :--- |
+| 1.3.0 | 2026-11-11 | New optional modern Venus dashboard layout (`layout: modern`) with KPI metric cards, spline commit chart, pill badges, and capsule progress bars; fully backwards-compatible with `layout: classic` |
 | 1.2.1 | 2026-11-11 | Own repository for manual installation. A count keeps the time GitHub sent it, so a cached answer no longer looks like new downloads |
 | 1.2.0 | 2026-11-10 | Downloads today per repository and per release, history in the Home Assistant user data |
 | 1.1.0 | 2026-11-10 | Stars, forks, issues, commits, last push, commit activity of 12 weeks |

@@ -18,7 +18,7 @@
  * cached per repository and revalidated with ETags, so a reload within the
  * refresh time costs no API quota (60 requests per hour without a token).
  */
-const CARD_VERSION = "1.2.1";
+const CARD_VERSION = "1.3.0";
 const API = "https://api.github.com";
 const CACHE_PREFIX = "grs-card:";
 const HISTORY_KEY = "github-release-stats-card-history";
@@ -29,6 +29,7 @@ const DEFAULTS = {
   repositories: [],
   releases: 5,
   refresh: 60,
+  layout: "classic",
   show_search: true,
   hide_empty: false,
   show_details: true,
@@ -90,6 +91,45 @@ export const dayKey = (ts) => {
 };
 
 const time = (ts) => new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+
+/**
+ * Smooth cubic bezier spline for activity charts.
+ * Given values, returns linePath, areaPath and scaled points.
+ */
+export const computeSpline = (values, width = 320, height = 70, padding = 8) => {
+  if (!values || !values.length) return { linePath: "", areaPath: "", points: [] };
+  const max = Math.max(1, ...values);
+  const n = values.length;
+  const usableH = height - 2 * padding;
+  const points = values.map((v, i) => {
+    const x = Math.round(i * (width / Math.max(1, n - 1)));
+    const y = Math.round(height - padding - (v / max) * usableH);
+    return [x, y];
+  });
+  if (points.length === 1) {
+    return {
+      linePath: `M 0,${points[0][1]} L ${width},${points[0][1]}`,
+      areaPath: `M 0,${points[0][1]} L ${width},${points[0][1]} L ${width},${height} L 0,${height} Z`,
+      points,
+    };
+  }
+  let line = `M ${points[0][0]},${points[0][1]}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? i : i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+    line += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[0 + 1] ? p2[1].toFixed(1) : p2[1].toFixed(1)}`;
+  }
+  const lastX = points[points.length - 1][0];
+  const firstX = points[0][0];
+  const area = `${line} L ${lastX},${height} L ${firstX},${height} Z`;
+  return { linePath: line, areaPath: area, points };
+};
 
 /**
  * Note a count in a repo's history: per day the first and the last count,
@@ -201,6 +241,18 @@ class GithubReleaseStatsCard extends HTMLElement {
         { name: "title", selector: { text: {} } },
         { name: "repositories", selector: { text: { multiple: true } } },
         {
+          name: "layout",
+          selector: {
+            select: {
+              mode: "dropdown",
+              options: [
+                { value: "classic", label: "Klassisch (Bisheriges Design)" },
+                { value: "modern", label: "Modern (Venus / Kachel-Design)" },
+              ],
+            },
+          },
+        },
+        {
           type: "grid",
           name: "",
           schema: [
@@ -217,6 +269,7 @@ class GithubReleaseStatsCard extends HTMLElement {
         ({
           title: "Titel",
           repositories: "Repositories (owner/repo oder GitHub-Link)",
+          layout: "Karten-Design / Layout",
           releases: "Angezeigte Releases",
           refresh: "Aktualisieren alle",
           show_search: "Suche anzeigen",
@@ -227,6 +280,7 @@ class GithubReleaseStatsCard extends HTMLElement {
       computeHelper: (s) =>
         ({
           repositories: "Diese Repositories bleiben dauerhaft auf der Karte.",
+          layout: "Wähle zwischen dem klassischen Look und dem modernen Venus-Kacheldesign.",
           refresh: "Zwischenspeicher pro Repository. GitHub erlaubt ohne Anmeldung 60 Abfragen pro Stunde.",
           hide_empty: "Nur Dateien in Releases (Assets) zählen Downloads.",
           show_details: "Kostet zwei weitere GitHub-Abfragen pro Repository und Aktualisierung (unverändert: keine).",
@@ -252,6 +306,7 @@ class GithubReleaseStatsCard extends HTMLElement {
       repositories: parsed.map((p) => `${p.owner}/${p.repo}`),
       releases: Math.max(1, Number(config.releases) || DEFAULTS.releases),
       refresh: Math.max(5, Number(config.refresh) || DEFAULTS.refresh),
+      layout: config.layout === "modern" ? "modern" : "classic",
     };
     if (this.isConnected) {
       this._render();
@@ -529,9 +584,10 @@ class GithubReleaseStatsCard extends HTMLElement {
 
   _render() {
     this._rendered = true;
+    const isModern = this._config.layout === "modern";
     this.shadowRoot.innerHTML = `
       <style>${STYLE}</style>
-      <ha-card>
+      <ha-card class="${isModern ? "layout-modern" : "layout-classic"}">
         <div class="head">
           <ha-icon icon="mdi:github"></ha-icon>
           <span class="title">${escapeHtml(this._config.title)}</span>
@@ -542,7 +598,7 @@ class GithubReleaseStatsCard extends HTMLElement {
             ? `<form class="search" id="search" role="search">
                 <ha-icon icon="mdi:magnify"></ha-icon>
                 <input id="query" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search"
-                  placeholder="owner/repo, GitHub-Link oder Benutzer" aria-label="Repository suchen">
+                  placeholder="${isModern ? "owner/repo, GitHub-Link oder Benutzer suchen …" : "owner/repo, GitHub-Link oder Benutzer"}" aria-label="Repository suchen">
                 <button type="submit" class="go">Suchen</button>
               </form>`
             : ""
@@ -599,13 +655,14 @@ class GithubReleaseStatsCard extends HTMLElement {
     let html = "";
     if (this._searchError) html += `<div class="note error">${escapeHtml(this._searchError)}</div>`;
     if (this._userRepos) html += this._userReposHtml();
+    const isModern = this._config.layout === "modern";
     if (this._search) {
       const key = `${this._search.owner}/${this._search.repo}`;
       if (!this._config.repositories.some((r) => r.toLowerCase() === key.toLowerCase())) {
-        html += this._repoHtml(key, true);
+        html += isModern ? this._repoHtmlModern(key, true) : this._repoHtml(key, true);
       }
     }
-    html += this._config.repositories.map((key) => this._repoHtml(key, false)).join("");
+    html += this._config.repositories.map((key) => (isModern ? this._repoHtmlModern(key, false) : this._repoHtml(key, false))).join("");
     if (!html) {
       html = `<div class="empty">
         <ha-icon icon="mdi:source-repository"></ha-icon>
@@ -617,6 +674,7 @@ class GithubReleaseStatsCard extends HTMLElement {
 
   _userReposHtml() {
     const u = this._userRepos;
+    const isModern = this._config.layout === "modern";
     let inner;
     if (u.state === "loading") inner = `<div class="note">Lade Repositories von ${escapeHtml(u.owner)} …</div>`;
     else if (u.state === "error") inner = `<div class="note error">${escapeHtml(u.error)}</div>`;
@@ -628,7 +686,7 @@ class GithubReleaseStatsCard extends HTMLElement {
             `<button class="chip${r.archived ? " muted" : ""}" data-action="pick" data-owner="${escapeHtml(u.owner)}" data-repo="${escapeHtml(r.name)}">${escapeHtml(r.name)}${r.stars ? ` <span class="star">★ ${number(r.stars)}</span>` : ""}</button>`
         )
         .join("")}</div>`;
-    return `<section class="repo search-result">
+    return `<section class="repo${isModern ? " modern-repo" : ""} search-result">
       <div class="repo-head">
         <span class="badge">Suche</span>
         <span class="repo-name">${escapeHtml(u.owner)}</span>
@@ -775,6 +833,213 @@ class GithubReleaseStatsCard extends HTMLElement {
       ${assets}
     </div>`;
   }
+
+  _repoHtmlModern(key, isSearch) {
+    const entry = this._data.get(key) || { state: "loading" };
+    const link = `https://github.com/${key}`;
+    const [owner, repoName] = key.split("/");
+    const close = isSearch
+      ? `<button class="icon-btn small" data-action="close-search" title="Schließen" aria-label="Schließen"><ha-icon icon="mdi:close"></ha-icon></button>`
+      : "";
+
+    if (!entry.summary) {
+      const msg =
+        entry.state === "error"
+          ? `<div class="note error">${escapeHtml(entry.error)} <button class="link" data-action="retry" data-key="${escapeHtml(key)}">Erneut versuchen</button></div>`
+          : `<div class="note"><span class="spinner"></span> Lade Releases …</div>`;
+      return `<section class="repo modern-repo${isSearch ? " search-result" : ""}">
+        <div class="m-repo-header">
+          <div class="m-repo-avatar"><ha-icon icon="mdi:github"></ha-icon></div>
+          <div class="m-repo-titles">
+            <span class="m-repo-owner">${escapeHtml(owner)}</span>
+            <a class="m-repo-name" href="${link}" target="_blank" rel="noopener noreferrer">${escapeHtml(repoName || key)}</a>
+          </div>
+          ${isSearch ? '<span class="badge">Suche</span>' : ""}
+          ${close}
+        </div>
+        ${msg}
+      </section>`;
+    }
+
+    const s = entry.summary;
+    const latest = s.releases.find((r) => !r.prerelease) || s.releases[0];
+    const list = this._config.hide_empty ? s.releases.filter((r) => r.assets.length) : s.releases;
+    const all = this._showAll.has(key);
+    const shown = all ? list : list.slice(0, this._config.releases);
+
+    const today = this._history ? countToday(this._history[key], s) : null;
+    const d = this._details.get(key);
+    const i = d?.info || {};
+
+    const head = `
+      <div class="m-repo-header">
+        <div class="m-repo-avatar"><ha-icon icon="mdi:github"></ha-icon></div>
+        <div class="m-repo-titles">
+          <span class="m-repo-owner">${escapeHtml(owner)}</span>
+          <a class="m-repo-name" href="${link}" target="_blank" rel="noopener noreferrer">${escapeHtml(repoName || key)}</a>
+        </div>
+        ${isSearch ? '<span class="badge">Suche</span>' : ""}
+        ${i.archived ? '<span class="meta archived">Archiviert</span>' : ""}
+        ${close}
+      </div>`;
+
+    let todayTitle = "";
+    let todayPill = "";
+    if (today) {
+      todayTitle = today.exact
+        ? "Downloads seit Mitternacht"
+        : today.fromToday
+          ? `Gezählt seit ${time(today.since)} Uhr`
+          : `Gezählt seit ${date(new Date(today.since).toISOString())}, ${time(today.since)} Uhr`;
+      const label = today.exact ? "heute" : today.fromToday ? `seit ${time(today.since)}` : "heute*";
+      todayPill = `<span class="m-kpi-pill" title="${escapeHtml(todayTitle)}">+${number(today.total)} ${label}</span>`;
+    }
+
+    const kpiDownloads = `
+      <div class="m-kpi-card m-kpi-hero">
+        <div class="m-kpi-top">
+          <div class="m-kpi-icon-wrap hero-icon"><ha-icon icon="mdi:cloud-download"></ha-icon></div>
+          ${todayPill}
+        </div>
+        <div class="m-kpi-num">${shortNumber(s.total)}</div>
+        <div class="m-kpi-lbl">${number(s.total)} Downloads</div>
+      </div>`;
+
+    const kpiReleases = `
+      <div class="m-kpi-card">
+        <div class="m-kpi-top">
+          <div class="m-kpi-icon-wrap" style="color: var(--grs-accent); background: rgba(var(--grs-accent-rgb), 0.12)"><ha-icon icon="mdi:tag-multiple-outline"></ha-icon></div>
+          <span class="m-kpi-subtag">${number(s.releases.length)} Releases</span>
+        </div>
+        <div class="m-kpi-num m-kpi-text" title="${latest ? escapeHtml(latest.tag) : "–"}">${latest ? escapeHtml(latest.tag) : "–"}</div>
+        <div class="m-kpi-lbl">${latest ? ago(latest.published) : "Keine Releases"}</div>
+      </div>`;
+
+    const kpiCommunity = this._config.show_details
+      ? `<div class="m-kpi-card">
+          <div class="m-kpi-top">
+            <div class="m-kpi-icon-wrap" style="color: var(--grs-yellow); background: rgba(223, 142, 29, 0.14)"><ha-icon icon="mdi:star"></ha-icon></div>
+            <span class="m-kpi-subtag">${d?.info ? `${number(i.forks)} Forks` : "GitHub"}</span>
+          </div>
+          <div class="m-kpi-num">${d?.info ? number(i.stars) : "–"}</div>
+          <div class="m-kpi-lbl">${d?.info ? `${number(i.issues)} offene Issues` : "Sterne"}</div>
+        </div>`
+      : "";
+
+    const weeksList = Array.isArray(d?.weeks) ? d.weeks.slice(-12) : null;
+    const commitSum = weeksList ? weeksList.reduce((a, b) => a + b, 0) : null;
+    const kpiCommits = (this._config.show_details || this._config.show_activity)
+      ? `<div class="m-kpi-card">
+          <div class="m-kpi-top">
+            <div class="m-kpi-icon-wrap" style="color: var(--grs-green); background: rgba(64, 160, 43, 0.14)"><ha-icon icon="mdi:source-commit"></ha-icon></div>
+            <span class="m-kpi-subtag">${i.pushed ? ago(i.pushed) : "Aktivität"}</span>
+          </div>
+          <div class="m-kpi-num">${d?.commits != null ? shortNumber(d.commits) : (commitSum != null ? number(commitSum) : "–")}</div>
+          <div class="m-kpi-lbl">Commits Hauptzweig</div>
+        </div>`
+      : "";
+
+    const kpiGrid = `<div class="m-kpi-grid">${kpiDownloads}${kpiReleases}${kpiCommunity}${kpiCommits}</div>`;
+
+    let chartHtml = "";
+    if (this._config.show_activity) {
+      if (weeksList) {
+        const spline = computeSpline(weeksList, 320, 70, 8);
+        const gradId = `grad-${key.replace(/[^a-zA-Z0-9]/g, "-")}`;
+        const dots = spline.points
+          .map(
+            (p, idx) =>
+              `<circle cx="${p[0]}" cy="${p[1]}" r="${idx === spline.points.length - 1 ? 4 : 2.5}" fill="var(--grs-accent)" class="m-chart-dot"><title>${weeksList[idx]} Commits vor ${11 - idx} Wochen</title></circle>`
+          )
+          .join("");
+        chartHtml = `
+          <div class="m-chart-card">
+            <div class="m-chart-header">
+              <div class="m-chart-header-left">
+                <ha-icon icon="mdi:chart-timeline-variant"></ha-icon>
+                <div>
+                  <span class="m-chart-title">Commit-Aktivität</span>
+                  <span class="m-chart-sub">Letzte 12 Wochen</span>
+                </div>
+              </div>
+              <div class="m-chart-badge">${number(commitSum)} Commits</div>
+            </div>
+            <div class="m-chart-svg-wrap">
+              <svg class="m-spline-svg" viewBox="0 0 320 70" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--grs-accent)" stop-opacity="0.38"/>
+                    <stop offset="100%" stop-color="var(--grs-accent)" stop-opacity="0.0"/>
+                  </linearGradient>
+                </defs>
+                <path d="${spline.areaPath}" fill="url(#${gradId})"/>
+                <path d="${spline.linePath}" fill="none" stroke="var(--grs-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                ${dots}
+              </svg>
+            </div>
+          </div>`;
+      } else if (d?.pending) {
+        chartHtml = `<div class="m-chart-card"><div class="m-chart-loading"><span class="spinner"></span> GitHub berechnet die Commit-Statistik …</div></div>`;
+      }
+    }
+
+    const rows = shown.length
+      ? shown.map((r) => this._releaseHtmlModern(key, r, s.max, today?.releases[r.tag])).join("")
+      : `<div class="note">Keine Releases${this._config.hide_empty && s.releases.length ? " mit Dateien" : ""}.</div>`;
+    const more =
+      list.length > this._config.releases
+        ? `<button class="m-btn-pill" data-action="show-all" data-key="${escapeHtml(key)}">${all ? "Weniger anzeigen" : `Alle ${number(list.length)} Releases anzeigen`}</button>`
+        : "";
+    const hint =
+      s.releases.length && !s.hasZip
+        ? `<div class="hint"><ha-icon icon="mdi:information-outline"></ha-icon>Gezählt werden nur Dateien in Releases. Installationen über HACS laden den Quellcode und erscheinen hier nicht.</div>`
+        : "";
+
+    return `<section class="repo modern-repo${isSearch ? " search-result" : ""}">
+      ${head}
+      ${kpiGrid}
+      ${chartHtml}
+      <div class="m-releases">${rows}</div>
+      ${more}
+      ${hint}
+    </section>`;
+  }
+
+  _releaseHtmlModern(key, r, max, todayCount) {
+    const id = `${key}@${r.tag}`;
+    const open = this._expanded.has(id);
+    const pct = max ? Math.max(r.downloads ? 4 : 0, Math.round((r.downloads / max) * 100)) : 0;
+    const assets = open
+      ? `<div class="assets">${
+          r.assets.length
+            ? r.assets
+                .map(
+                  (a) => `<a class="asset" href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">
+                    <ha-icon icon="mdi:file-download-outline"></ha-icon>
+                    <span class="asset-name">${escapeHtml(a.name)}</span>
+                    <span class="asset-size">${size(a.size)}</span>
+                    <span class="asset-dl">${number(a.downloads)}</span>
+                  </a>`
+                )
+                .join("")
+            : '<div class="note small">Dieses Release hat keine Dateien.</div>'
+        }<a class="release-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">Release auf GitHub öffnen</a></div>`
+      : "";
+    return `<div class="m-release${r.assets.length ? "" : " empty-release"}${open ? " open" : ""}">
+      <button class="m-release-row" data-action="toggle-release" data-key="${escapeHtml(key)}" data-tag="${escapeHtml(r.tag)}" aria-expanded="${open}">
+        <ha-icon class="chev" icon="mdi:chevron-right"></ha-icon>
+        <span class="m-rel-tag">${escapeHtml(r.tag)}</span>
+        ${r.prerelease ? '<span class="pre">Pre</span>' : ""}
+        <span class="date">${date(r.published)}</span>
+        <div class="m-rel-right">
+          ${todayCount ? `<span class="m-pill-today">+${number(todayCount)} heute</span>` : ""}
+          <span class="dl">${number(r.downloads)}</span>
+        </div>
+        <div class="m-progress-capsule" aria-hidden="true"><span style="width:${pct}%"></span></div>
+      </button>
+      ${assets}
+    </div>`;
+  }
 }
 
 const STYLE = `
@@ -916,6 +1181,369 @@ const STYLE = `
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ================= MODERN / VENUS LAYOUT STYLES ================= */
+  ha-card.layout-modern {
+    padding: 16px 16px 12px;
+  }
+  .layout-modern .head {
+    margin-bottom: 14px;
+  }
+  .layout-modern .title {
+    font-size: 1.22rem;
+    font-weight: 700;
+  }
+  .layout-modern .search {
+    background: var(--grs-surface);
+    border: 1px solid rgba(var(--grs-accent-rgb), 0.16);
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.05);
+    margin-bottom: 14px;
+    padding: 4px 6px 4px 14px;
+  }
+  .layout-modern .search:focus-within {
+    border-color: var(--grs-accent);
+    box-shadow: 0 0 0 3px rgba(var(--grs-accent-rgb), 0.18);
+  }
+  .layout-modern .go {
+    background: var(--grs-accent);
+    border-radius: 999px;
+    font-weight: 700;
+    padding: 0 18px;
+    box-shadow: 0 2px 8px 0 rgba(var(--grs-accent-rgb), 0.3);
+  }
+
+  .modern-repo {
+    border-radius: var(--ha-card-border-radius, 14px);
+    background: var(--ha-card-background, var(--card-background-color, rgba(var(--grs-accent-rgb), 0.04)));
+    border: 1px solid rgba(var(--grs-accent-rgb), 0.14);
+    box-shadow: 0 4px 18px -4px rgba(0, 0, 0, 0.05);
+    padding: 14px;
+  }
+
+  .m-repo-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .m-repo-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--grs-accent-rgb), 0.12);
+    color: var(--grs-accent);
+    flex: none;
+  }
+  .m-repo-avatar ha-icon {
+    --mdc-icon-size: 22px;
+  }
+  .m-repo-titles {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .m-repo-owner {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--grs-muted);
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-repo-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--primary-text-color);
+    text-decoration: none;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  a.m-repo-name:hover {
+    color: var(--grs-accent);
+    text-decoration: underline;
+  }
+
+  /* Modern KPI Grid */
+  .m-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .m-kpi-card {
+    background: var(--grs-surface);
+    border: 1px solid rgba(var(--grs-accent-rgb), 0.1);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 84px;
+    box-sizing: border-box;
+  }
+  .m-kpi-hero {
+    background: linear-gradient(135deg, var(--grs-accent) 0%, #4f46e5 100%);
+    border-color: transparent;
+    color: #ffffff;
+    box-shadow: 0 4px 14px 0 rgba(var(--grs-accent-rgb), 0.32);
+  }
+  .m-kpi-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .m-kpi-icon-wrap {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .m-kpi-icon-wrap ha-icon {
+    --mdc-icon-size: 16px;
+  }
+  .hero-icon {
+    background: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+  }
+  .m-kpi-pill {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.24);
+    color: #ffffff;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+  }
+  .m-kpi-subtag {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--grs-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-kpi-num {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary-text-color);
+  }
+  .m-kpi-text {
+    font-size: 1.05rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-kpi-hero .m-kpi-num {
+    color: #ffffff;
+  }
+  .m-kpi-lbl {
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--grs-muted);
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-kpi-hero .m-kpi-lbl {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  /* Modern Spline Chart Card */
+  .m-chart-card {
+    background: var(--grs-surface);
+    border: 1px solid rgba(var(--grs-accent-rgb), 0.1);
+    border-radius: 12px;
+    padding: 10px 12px 8px;
+    margin-bottom: 12px;
+  }
+  .m-chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .m-chart-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .m-chart-header-left ha-icon {
+    --mdc-icon-size: 18px;
+    color: var(--grs-accent);
+  }
+  .m-chart-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--primary-text-color);
+    display: block;
+    line-height: 1.15;
+  }
+  .m-chart-sub {
+    font-size: 0.68rem;
+    color: var(--grs-muted);
+    display: block;
+  }
+  .m-chart-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(var(--grs-accent-rgb), 0.12);
+    color: var(--grs-accent);
+  }
+  .m-chart-svg-wrap {
+    width: 100%;
+    height: 65px;
+    overflow: hidden;
+  }
+  .m-spline-svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .m-chart-dot {
+    transition: r 0.15s ease;
+    cursor: pointer;
+  }
+  .m-chart-dot:hover {
+    r: 5px;
+  }
+  .m-chart-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--grs-muted);
+    padding: 14px 0;
+    justify-content: center;
+  }
+
+  /* Modern Releases Section */
+  .m-releases {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .m-release {
+    border-radius: 10px;
+    background: var(--grs-surface);
+    border: 1px solid transparent;
+    transition: border-color 0.15s ease;
+    overflow: hidden;
+  }
+  .m-release:hover {
+    border-color: rgba(var(--grs-accent-rgb), 0.22);
+  }
+  .m-release-row {
+    width: 100%;
+    min-height: 40px;
+    display: grid;
+    align-items: center;
+    column-gap: 8px;
+    grid-template-columns: 18px minmax(0, auto) auto 1fr auto;
+    grid-template-areas: "chev tag pre date dl" "bar bar bar bar bar";
+    padding: 7px 10px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--primary-text-color);
+    font: inherit;
+    text-align: left;
+  }
+  .m-release-row:focus-visible {
+    outline: 2px solid var(--grs-accent);
+  }
+  .m-release.open .chev {
+    transform: rotate(90deg);
+  }
+  .m-rel-tag {
+    grid-area: tag;
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--primary-text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-rel-right {
+    grid-area: dl;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .m-pill-today {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(64, 160, 43, 0.15);
+    color: var(--grs-green);
+    margin-right: 6px;
+    white-space: nowrap;
+  }
+  .m-progress-capsule {
+    grid-area: bar;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(var(--grs-accent-rgb), 0.1);
+    margin-top: 5px;
+    overflow: hidden;
+  }
+  .m-progress-capsule > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--grs-accent), #38bdf8);
+    transition: width 0.3s ease;
+  }
+  .m-btn-pill {
+    width: 100%;
+    min-height: 38px;
+    margin-top: 8px;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    background: rgba(var(--grs-accent-rgb), 0.12);
+    color: var(--grs-accent);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.84rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .m-btn-pill:hover {
+    background: var(--grs-accent);
+    color: #ffffff;
+    box-shadow: 0 4px 12px 0 rgba(var(--grs-accent-rgb), 0.3);
+  }
+
+  @media (max-width: 440px) {
+    .m-kpi-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .m-kpi-num {
+      font-size: 1.18rem;
+    }
+  }
+
   @media (max-width: 420px) {
     ha-card { padding: 12px 10px 8px; }
     .go { padding: 0 12px; }
