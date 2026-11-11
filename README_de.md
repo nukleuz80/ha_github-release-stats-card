@@ -1,6 +1,6 @@
 # GitHub Release Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.3.0-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.3.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇬🇧 [English version](README.md)
@@ -11,11 +11,11 @@ Eine Lovelace-Karte für Home Assistant, die zeigt, wie oft die Dateien deiner G
 
 ## Funktionen
 
-- **Downloads** pro Repository und pro Release, mit einem Balken pro Release. Ein Tipp auf ein Release zeigt seine Dateien mit Größe und Downloads.
+- **Downloads** pro Repository und pro Release, mit einem Balken pro Release. Ein Tipp auf ein Release zeigt seinen Titel, eine Mini-Beschreibung (Changelog-Auszug) und die Release-Dateien mit Größe und Downloads.
 - **Downloads heute** (`+3 heute`) pro Repository und pro Release, siehe [So wird „heute“ gezählt](#so-wird-heute-gezählt).
 - **Suche** oben: `owner/repo`, ein GitHub-Link oder ein Benutzername für eine Liste seiner Repositories.
 - **Details**: Sterne, Forks, offene Issues, Commits insgesamt und der letzte Push.
-- **Aktivität**: Commits der letzten 12 Wochen als Balkendiagramm.
+- **Aktivität**: Commits der letzten 12 Wochen als Balkendiagramm (oder Spline-Chart im Modern-Design).
 - **Kein Token, kein Server**: Die Karte liest das öffentliche GitHub-API direkt im Browser. Antworten werden zwischengespeichert und mit ETags geprüft, ein Neuladen des Dashboards kostet also kein Kontingent (60 Abfragen pro Stunde ohne Token).
 - Nutzt die Farben des Home-Assistant-Themes und von [Catppuccin](https://github.com/catppuccin/home-assistant), wenn vorhanden. Funktioniert hell, dunkel und auf dem Handy.
 - Grafischer Editor im Dashboard.
@@ -23,7 +23,7 @@ Eine Lovelace-Karte für Home Assistant, die zeigt, wie oft die Dateien deiner G
 ## Installation
 
 1. [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) herunterladen und nach `/config/www/` kopieren.
-2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.3.0` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
+2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.3.1` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
 3. Den Browser neu laden. Nach einem Update `?v=` hochzählen, damit Browser die neue Version laden.
 
 ## Konfiguration
@@ -71,6 +71,7 @@ Gezählt werden nur Dateien, die an einem Release hängen. Die Quellcode-Archive
 
 | Version | Datum | Highlights |
 | :--- | :--- | :--- |
+| 1.3.1 | 11.11.2026 | Beim Aufklappen eines Releases werden nun Release-Name, eine Mini-Beschreibung (Changelog-Auszug) und die Dateiliste übersichtlich angezeigt |
 | 1.3.0 | 11.11.2026 | Neues optionales Modern-Design im Venus-Dashboard-Stil (KPI-Kacheln, Spline-Commit-Chart, Pill-Badges, Capsule-Progressbars), umschaltbar über `layout: classic` oder `modern` |
 | 1.2.1 | 11.11.2026 | Eigenes Repository zur manuellen Installation. Eine Zählung behält den Zeitpunkt der GitHub-Antwort, eine zwischengespeicherte Antwort sieht nicht mehr wie neue Downloads aus |
 | 1.2.0 | 10.11.2026 | Downloads heute pro Repository und pro Release, Verlauf in den Home-Assistant-Benutzerdaten |

@@ -18,7 +18,7 @@
  * cached per repository and revalidated with ETags, so a reload within the
  * refresh time costs no API quota (60 requests per hour without a token).
  */
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.3.1";
 const API = "https://api.github.com";
 const CACHE_PREFIX = "grs-card:";
 const HISTORY_KEY = "github-release-stats-card-history";
@@ -51,6 +51,27 @@ const size = (bytes) => {
   if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1).replace(".", ",")} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${bytes} B`;
+};
+
+/** Clean markdown release body into a concise plain text excerpt with linebreaks. */
+export const cleanExcerpt = (text, maxLength = 320) => {
+  if (!text) return "";
+  let clean = String(text)
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/^#+\s*(.*)$/gm, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_`~]/g, "")
+    .replace(/^\s*[-*+]\s+/gm, "• ")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (clean.length > maxLength) {
+    const cut = clean.slice(0, maxLength);
+    const lastSpace = cut.lastIndexOf(" ");
+    clean = (lastSpace > maxLength * 0.7 ? cut.slice(0, lastSpace) : cut).trim().replace(/[,;:.!?•\s]+$/, "") + " …";
+  }
+  return clean;
 };
 
 /** "vor 3 Tagen" for an ISO date. */
@@ -197,6 +218,7 @@ export const summarize = (releases) => {
       return {
         tag: r.tag_name,
         name: r.name || r.tag_name,
+        body: r.body || "",
         url: r.html_url,
         published: r.published_at || r.created_at,
         prerelease: Boolean(r.prerelease),
@@ -366,7 +388,8 @@ class GithubReleaseStatsCard extends HTMLElement {
   async _fetchList(path, maxPages = 10, force = false, slim = (items) => items) {
     const cached = this._readCache(path);
     const pagesOk = cached && Array.isArray(cached.pages);
-    if (pagesOk && !force && Date.now() - cached.time < this._config.refresh * 60000) {
+    const hasBodyField = !pagesOk || cached.pages.every((p) => p.every((r) => r.body !== undefined));
+    if (pagesOk && !force && hasBodyField && Date.now() - cached.time < this._config.refresh * 60000) {
       const items = cached.pages.flat();
       items.fetched = cached.time; // when GitHub gave these numbers
       return items;
@@ -374,8 +397,8 @@ class GithubReleaseStatsCard extends HTMLElement {
     const pages = [];
     for (let page = 1; page <= maxPages; page++) {
       const headers = { Accept: "application/vnd.github+json" };
-      const old = pagesOk ? cached.pages[page - 1] : null;
-      const oldTag = pagesOk ? cached.etags[page - 1] : null;
+      const old = pagesOk && hasBodyField ? cached.pages[page - 1] : null;
+      const oldTag = pagesOk && hasBodyField ? cached.etags[page - 1] : null;
       if (old && oldTag) headers["If-None-Match"] = oldTag;
       const sep = path.includes("?") ? "&" : "?";
       const res = await fetch(`${API}${path}${sep}per_page=100&page=${page}`, { headers });
@@ -464,7 +487,8 @@ class GithubReleaseStatsCard extends HTMLElement {
   _slimReleases(list) {
     return list.map((r) => ({
       tag_name: r.tag_name,
-      name: r.name,
+      name: r.name || "",
+      body: cleanExcerpt(r.body, 320),
       html_url: r.html_url,
       published_at: r.published_at,
       created_at: r.created_at,
@@ -804,21 +828,31 @@ class GithubReleaseStatsCard extends HTMLElement {
     const id = `${key}@${r.tag}`;
     const open = this._expanded.has(id);
     const pct = max ? Math.max(r.downloads ? 3 : 0, Math.round((r.downloads / max) * 100)) : 0;
+    const hasDistinctName = r.name && r.name.trim().toLowerCase() !== r.tag.trim().toLowerCase();
+    const releaseName = hasDistinctName ? r.name : (r.name || r.tag);
+    const titleHtml = releaseName ? `<div class="rel-title"><ha-icon icon="mdi:tag-outline"></ha-icon><span>${escapeHtml(releaseName)}</span></div>` : "";
+    const bodyHtml = r.body ? `<div class="rel-desc">${escapeHtml(r.body)}</div>` : "";
     const assets = open
-      ? `<div class="assets">${
-          r.assets.length
-            ? r.assets
-                .map(
-                  (a) => `<a class="asset" href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">
-                    <ha-icon icon="mdi:file-download-outline"></ha-icon>
-                    <span class="asset-name">${escapeHtml(a.name)}</span>
-                    <span class="asset-size">${size(a.size)}</span>
-                    <span class="asset-dl">${number(a.downloads)}</span>
-                  </a>`
-                )
-                .join("")
-            : '<div class="note small">Dieses Release hat keine Dateien.</div>'
-        }<a class="release-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">Release auf GitHub öffnen</a></div>`
+      ? `<div class="assets">
+          ${titleHtml}
+          ${bodyHtml}
+          ${
+            r.assets.length
+              ? `<div class="rel-files-header"><ha-icon icon="mdi:package-variant-closed"></ha-icon><span>Dateien (${number(r.assets.length)}):</span></div>` +
+                r.assets
+                  .map(
+                    (a) => `<a class="asset" href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">
+                      <ha-icon icon="mdi:file-download-outline"></ha-icon>
+                      <span class="asset-name">${escapeHtml(a.name)}</span>
+                      <span class="asset-size">${size(a.size)}</span>
+                      <span class="asset-dl">${number(a.downloads)}</span>
+                    </a>`
+                  )
+                  .join("")
+              : '<div class="note small">Dieses Release hat keine Dateien.</div>'
+          }
+          <a class="release-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">Release auf GitHub öffnen <ha-icon icon="mdi:open-in-new"></ha-icon></a>
+        </div>`
       : "";
     return `<div class="release${r.assets.length ? "" : " empty-release"}${open ? " open" : ""}">
       <button class="release-row" data-action="toggle-release" data-key="${escapeHtml(key)}" data-tag="${escapeHtml(r.tag)}" aria-expanded="${open}">
@@ -1009,21 +1043,34 @@ class GithubReleaseStatsCard extends HTMLElement {
     const id = `${key}@${r.tag}`;
     const open = this._expanded.has(id);
     const pct = max ? Math.max(r.downloads ? 4 : 0, Math.round((r.downloads / max) * 100)) : 0;
+    const hasDistinctName = r.name && r.name.trim().toLowerCase() !== r.tag.trim().toLowerCase();
+    const releaseName = hasDistinctName ? r.name : (r.name || r.tag);
+    const titleHtml = releaseName ? `<div class="m-rel-title"><ha-icon icon="mdi:tag-outline"></ha-icon><span>${escapeHtml(releaseName)}</span></div>` : "";
+    const bodyHtml = r.body ? `<div class="m-rel-desc">${escapeHtml(r.body)}</div>` : "";
     const assets = open
-      ? `<div class="assets">${
-          r.assets.length
-            ? r.assets
-                .map(
-                  (a) => `<a class="asset" href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">
-                    <ha-icon icon="mdi:file-download-outline"></ha-icon>
-                    <span class="asset-name">${escapeHtml(a.name)}</span>
-                    <span class="asset-size">${size(a.size)}</span>
-                    <span class="asset-dl">${number(a.downloads)}</span>
-                  </a>`
-                )
-                .join("")
-            : '<div class="note small">Dieses Release hat keine Dateien.</div>'
-        }<a class="release-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">Release auf GitHub öffnen</a></div>`
+      ? `<div class="m-assets">
+          ${titleHtml}
+          ${bodyHtml}
+          ${
+            r.assets.length
+              ? `<div class="m-rel-files-header"><ha-icon icon="mdi:package-variant-closed"></ha-icon><span>Dateien (${number(r.assets.length)}):</span></div>` +
+                r.assets
+                  .map(
+                    (a) => `<a class="asset" href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">
+                      <ha-icon icon="mdi:file-download-outline"></ha-icon>
+                      <span class="asset-name">${escapeHtml(a.name)}</span>
+                      <span class="asset-size">${size(a.size)}</span>
+                      <span class="asset-dl">${number(a.downloads)}</span>
+                    </a>`
+                  )
+                  .join("")
+              : '<div class="note small">Dieses Release hat keine Dateien.</div>'
+          }
+          <a class="m-rel-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">
+            <span>Release auf GitHub öffnen</span>
+            <ha-icon icon="mdi:open-in-new"></ha-icon>
+          </a>
+        </div>`
       : "";
     return `<div class="m-release${r.assets.length ? "" : " empty-release"}${open ? " open" : ""}">
       <button class="m-release-row" data-action="toggle-release" data-key="${escapeHtml(key)}" data-tag="${escapeHtml(r.tag)}" aria-expanded="${open}">
@@ -1142,6 +1189,23 @@ const STYLE = `
   .bar > span { display: block; height: 100%; border-radius: 2px; background: var(--grs-accent); }
   .empty-release .tag, .empty-release .dl { color: var(--grs-muted); font-weight: 500; }
   .assets { margin: 2px 0 8px 26px; display: flex; flex-direction: column; gap: 2px; }
+  .rel-title {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.88rem; font-weight: 700; color: var(--primary-text-color);
+    margin: 4px 0 2px;
+  }
+  .rel-title ha-icon { --mdc-icon-size: 15px; color: var(--grs-accent); }
+  .rel-desc {
+    font-size: 0.78rem; line-height: 1.45; color: var(--secondary-text-color);
+    white-space: pre-line; margin: 3px 0 6px; padding: 6px 10px;
+    background: var(--grs-surface); border-radius: 8px; border-left: 3px solid var(--grs-accent);
+  }
+  .rel-files-header {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--grs-muted); margin: 6px 0 2px;
+  }
+  .rel-files-header ha-icon { --mdc-icon-size: 14px; color: var(--grs-accent); }
   .asset {
     display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
     min-height: 36px; padding: 4px 8px; border-radius: 8px; text-decoration: none; color: var(--primary-text-color); font-size: 0.85rem;
@@ -1152,9 +1216,11 @@ const STYLE = `
   .asset-size { font-size: 0.75rem; color: var(--grs-muted); white-space: nowrap; }
   .asset-dl { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 2.5ch; text-align: right; }
   .release-link, .link {
+    display: inline-flex; align-items: center; gap: 4px;
     align-self: flex-start; margin: 4px 8px 0; padding: 0; border: none; background: none; cursor: pointer;
     font: inherit; font-size: 0.8rem; color: var(--grs-accent); text-decoration: underline;
   }
+  .release-link ha-icon { --mdc-icon-size: 13px; }
   .more {
     width: 100%; min-height: 40px; margin-top: 6px; border: none; border-radius: 8px; cursor: pointer;
     background: var(--grs-surface); color: var(--grs-accent); font: inherit; font-weight: 600; font-size: 0.85rem;
@@ -1535,6 +1601,77 @@ const STYLE = `
     box-shadow: 0 4px 12px 0 rgba(var(--grs-accent-rgb), 0.3);
   }
 
+  .m-assets {
+    margin: 4px 6px 10px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px 6px;
+    border-radius: 10px;
+    background: rgba(var(--grs-accent-rgb), 0.04);
+    border: 1px dashed rgba(var(--grs-accent-rgb), 0.18);
+  }
+  .m-rel-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--primary-text-color);
+    margin: 2px 0 3px;
+  }
+  .m-rel-title ha-icon {
+    --mdc-icon-size: 16px;
+    color: var(--grs-accent);
+  }
+  .m-rel-desc {
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--secondary-text-color);
+    white-space: pre-line;
+    padding: 7px 10px;
+    background: var(--grs-surface);
+    border-left: 3px solid var(--grs-accent);
+    border-radius: 0 8px 8px 0;
+    margin: 2px 0 6px;
+  }
+  .m-rel-files-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--grs-muted);
+    margin: 4px 0 2px;
+  }
+  .m-rel-files-header ha-icon {
+    --mdc-icon-size: 14px;
+    color: var(--grs-accent);
+  }
+  .m-rel-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--grs-accent);
+    text-decoration: none;
+    transition: background 0.15s ease;
+  }
+  .m-rel-link:hover {
+    background: rgba(var(--grs-accent-rgb), 0.12);
+    text-decoration: underline;
+  }
+  .m-rel-link ha-icon {
+    --mdc-icon-size: 13px;
+  }
+
   @media (max-width: 440px) {
     .m-kpi-grid {
       grid-template-columns: repeat(2, 1fr);
@@ -1549,7 +1686,7 @@ const STYLE = `
     .go { padding: 0 12px; }
     .total-num { font-size: 1.35rem; }
     .release-row { grid-template-columns: 18px minmax(0, 1fr) auto auto; grid-template-areas: "chev tag pre dl" "chev date date date" "bar bar bar bar"; row-gap: 0; }
-    .assets { margin-left: 8px; }
+    .assets, .m-assets { margin-left: 8px; }
     .asset { grid-template-columns: 18px minmax(0, 1fr) auto; }
     .asset-size { display: none; }
   }
