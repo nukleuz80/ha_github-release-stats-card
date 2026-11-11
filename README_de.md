@@ -1,0 +1,93 @@
+# GitHub Release Stats Card
+
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![Version](https://img.shields.io/badge/version-1.2.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
+
+🇬🇧 [English version](README.md)
+
+Eine Lovelace-Karte für Home Assistant, die zeigt, wie oft die Dateien deiner GitHub-Releases heruntergeladen wurden, heute und insgesamt. Eigene Repositories heftest du dauerhaft an, jedes andere findest du über die Suche.
+
+<img src="images/screenshot.png" alt="GitHub Release Stats Card" width="480">
+
+## Funktionen
+
+- **Downloads** pro Repository und pro Release, mit einem Balken pro Release. Ein Tipp auf ein Release zeigt seine Dateien mit Größe und Downloads.
+- **Downloads heute** (`+3 heute`) pro Repository und pro Release, siehe [So wird „heute“ gezählt](#so-wird-heute-gezählt).
+- **Suche** oben: `owner/repo`, ein GitHub-Link oder ein Benutzername für eine Liste seiner Repositories.
+- **Details**: Sterne, Forks, offene Issues, Commits insgesamt und der letzte Push.
+- **Aktivität**: Commits der letzten 12 Wochen als Balkendiagramm.
+- **Kein Token, kein Server**: Die Karte liest das öffentliche GitHub-API direkt im Browser. Antworten werden zwischengespeichert und mit ETags geprüft, ein Neuladen des Dashboards kostet also kein Kontingent (60 Abfragen pro Stunde ohne Token).
+- Nutzt die Farben des Home-Assistant-Themes und von [Catppuccin](https://github.com/catppuccin/home-assistant), wenn vorhanden. Funktioniert hell, dunkel und auf dem Handy.
+- Grafischer Editor im Dashboard.
+
+## Installation
+
+### HACS (empfohlen)
+
+1. In HACS **⋮ → Benutzerdefinierte Repositories** öffnen.
+2. `https://github.com/nukleuz80/ha_github-release-stats-card` mit dem Typ **Dashboard** hinzufügen.
+3. Nach **GitHub Release Stats Card** suchen und herunterladen. HACS trägt die Ressource selbst ein.
+4. Den Browser neu laden.
+
+### Manuell
+
+1. `github-release-stats-card.js` nach `/config/www/` kopieren.
+2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.2.1` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
+3. Den Browser neu laden. Nach einem Update `?v=` hochzählen, damit Browser die neue Version laden.
+
+## Konfiguration
+
+Über **Karte hinzufügen → GitHub Release Stats Card** oder in YAML:
+
+```yaml
+type: custom:github-release-stats-card
+title: GitHub Releases
+repositories:
+  - nukleuz80/ha_brainstorm
+  - https://github.com/hacs/integration
+```
+
+| Option | Standard | Beschreibung |
+| :--- | :--- | :--- |
+| `title` | `GitHub Releases` | Titel der Karte |
+| `repositories` | `[]` | Repositories, die immer auf der Karte stehen, als `owner/repo` oder GitHub-Link |
+| `releases` | `5` | Angezeigte Releases pro Repository, der Rest hinter „Alle … anzeigen“ |
+| `refresh` | `60` | Minuten zwischen zwei Aktualisierungen (mindestens 5) |
+| `show_search` | `true` | Suchleiste oben |
+| `show_details` | `true` | Sterne, Forks, Issues, Commits und letzter Push |
+| `show_activity` | `true` | Commits der letzten 12 Wochen |
+| `hide_empty` | `false` | Releases ohne Dateien ausblenden |
+
+## So wird „heute“ gezählt
+
+GitHub liefert nur die Gesamtzahl der Downloads pro Datei, keine Zahlen pro Tag. Bei jedem Laden merkt sich die Karte die Gesamtzahlen und den Zeitpunkt, an dem GitHub sie geliefert hat. Pro Tag behält sie die erste und die letzte Zählung, 31 Tage lang, in den Benutzerdaten des angemeldeten Home-Assistant-Benutzers. Alle deine Geräte teilen sie, andere Benutzer haben ihre eigenen.
+
+**Heute** ist die aktuelle Gesamtzahl minus die letzte Zählung von gestern. Dafür muss das Dashboard kurz vor Mitternacht irgendwo offen gewesen sein:
+
+- `+N heute`: Die letzte Zählung von gestern lag höchstens 2 Stunden vor Mitternacht.
+- `+N heute*`: Die letzte Zählung ist älter, der Tooltip nennt den Zeitpunkt.
+- `+N seit 14:05`: Am ersten Tag, gezählt ab dem ersten Laden.
+
+Gezählt werden nur angeheftete Repositories, eine Suche zeigt nur die Gesamtzahlen.
+
+## Was GitHub als Download zählt
+
+Gezählt werden nur Dateien, die an einem Release hängen. Die Quellcode-Archive, die GitHub an jedes Release hängt, zählen nicht. Genau die lädt HACS bei Integrationen, außer das Repository setzt `zip_release` in seiner `hacs.json` und hängt an jedes Release eine ZIP-Datei. Sonst erscheinen HACS-Installationen hier nicht.
+
+## Versionshistorie & Changelog
+
+| Version | Datum | Highlights |
+| :--- | :--- | :--- |
+| 1.2.1 | 11.11.2026 | Eigenes Repository mit HACS-Unterstützung. Eine Zählung behält den Zeitpunkt der GitHub-Antwort, eine zwischengespeicherte Antwort sieht nicht mehr wie neue Downloads aus |
+| 1.2.0 | 10.11.2026 | Downloads heute pro Repository und pro Release, Verlauf in den Home-Assistant-Benutzerdaten |
+| 1.1.0 | 10.11.2026 | Sterne, Forks, Issues, Commits, letzter Push, Commit-Aktivität über 12 Wochen |
+| 1.0.0 | 10.11.2026 | Erste Version: angeheftete Repositories, Suche, Downloads pro Release und Datei, ETag-Cache |
+
+## Danke
+
+Inspiriert von [GitHub Release Stats](https://somsubhra.github.io/github-release-stats/) von Somsubhra Bairi.
+
+## Lizenz
+
+[MIT](LICENSE)
