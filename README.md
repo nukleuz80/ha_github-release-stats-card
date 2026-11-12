@@ -1,13 +1,13 @@
-# GitHub Release Stats Card
+# GitHub Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.4.0-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.4.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇩🇪 [Deutsche Version](README_de.md)
 
-A Lovelace card for Home Assistant that shows how often the files of your GitHub releases were downloaded, today and in total. Pin your own repositories to the card and look up any other one with the search bar.
+A Lovelace card for Home Assistant with the statistics of your GitHub repositories: release downloads today and in total, stars, commits, and optionally views, clones and wiki edits. Pin your own repositories to the card and look up any other one with the search bar.
 
-<img src="images/screenshot.png" alt="GitHub Release Stats Card" width="480">
+<img src="images/screenshot.png" alt="GitHub Stats Card" width="480">
 
 > The card's interface is in German.
 
@@ -27,16 +27,16 @@ A Lovelace card for Home Assistant that shows how often the files of your GitHub
 ## Installation
 
 1. Download [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) and copy it to `/config/www/`.
-2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.4.0` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
+2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.4.1` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
 3. Reload the browser. When you update the file, raise `?v=` so browsers load the new version.
 
 ## Configuration
 
-Add the card with **Add card → GitHub Release Stats Card**, or in YAML:
+Add the card with **Add card → GitHub Stats**, or in YAML:
 
 ```yaml
 type: custom:github-release-stats-card
-title: GitHub Releases
+title: GitHub Stats
 layout: modern # or "classic" for the legacy layout
 repositories:
   - nukleuz80/ha_brainstorm
@@ -45,7 +45,7 @@ repositories:
 
 | Option | Default | Description |
 | :--- | :--- | :--- |
-| `title` | `GitHub Releases` | Card title |
+| `title` | `GitHub Stats` | Card title |
 | `layout` | `classic` | Layout style: `classic` (compact layout) or `modern` (Venus-inspired KPI grid & spline chart) |
 | `repositories` | `[]` | Repositories that always stay on the card, as `owner/repo` or a GitHub link |
 | `releases` | `5` | Releases shown per repository, the rest behind "Alle … anzeigen" |
@@ -94,6 +94,7 @@ Only files attached to a release (assets) are counted. The source code archives 
 
 | Version | Date | Highlights |
 | :--- | :--- | :--- |
+| 1.4.1 | 2026-11-12 | Renamed to GitHub Stats (card type, file and repository stay the same) |
 | 1.4.0 | 2026-11-12 | Views & clones (views, clones, referrers, popular pages, daily chart) through a Home Assistant sensor with a token; wiki section with recently changed and most read pages |
 | 1.3.1 | 2026-11-11 | Expanding a release now reveals its title, mini description excerpt (changelog notes), and file downloads list |
 | 1.3.0 | 2026-11-11 | New optional modern Venus dashboard layout (`layout: modern`) with KPI metric cards, spline commit chart, pill badges, and capsule progress bars; fully backwards-compatible with `layout: classic` |

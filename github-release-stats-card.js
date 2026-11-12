@@ -1,5 +1,5 @@
 /*
- * GitHub Release Stats Card
+ * GitHub Stats Card
  *
  * Shows how often the files of GitHub releases were downloaded, like
  * somsubhra.github.io/github-release-stats. Repositories set in the card
@@ -24,14 +24,14 @@
  * cached per repository and revalidated with ETags, so a reload within the
  * refresh time costs no API quota (60 requests per hour without a token).
  */
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.4.1";
 const API = "https://api.github.com";
 const CACHE_PREFIX = "grs-card:";
 const HISTORY_KEY = "github-release-stats-card-history";
 const HISTORY_DAYS = 31;
 
 const DEFAULTS = {
-  title: "GitHub Releases",
+  title: "GitHub Stats",
   repositories: [],
   releases: 5,
   refresh: 60,
@@ -2044,10 +2044,10 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "github-release-stats-card")) {
   window.customCards.push({
     type: "github-release-stats-card",
-    name: "GitHub Release Stats",
+    name: "GitHub Stats",
     description: "Downloads der Release-Dateien eines oder mehrerer GitHub-Repositories, mit Suche, Traffic und Wiki.",
     preview: true,
     documentationURL: "https://github.com/nukleuz80/ha_github-release-stats-card",
   });
 }
-console.info(`%c GITHUB-RELEASE-STATS-CARD %c v${CARD_VERSION} `, "color:#fff;background:#8839ef;font-weight:700", "color:#8839ef;background:#1e1e2e");
+console.info(`%c GITHUB-STATS-CARD %c v${CARD_VERSION} `, "color:#fff;background:#8839ef;font-weight:700", "color:#8839ef;background:#1e1e2e");

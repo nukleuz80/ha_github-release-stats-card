@@ -1,7 +1,7 @@
 # Add to the template: section of configuration.yaml (a list entry).
 # Copy the block per repository and change repo, name and unique_id.
 
-# GitHub-Traffic für die GitHub Release Stats Card
+# GitHub-Traffic für die GitHub Stats Card
 # (Aufrufe, Clones, Herkunft und beliebte Seiten, inkl. Wiki-Seiten).
 #
 # Holt die Daten stündlich über script.github_traffic_fetch, das wiederum
