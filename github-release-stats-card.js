@@ -24,7 +24,7 @@
  * cached per repository and revalidated with ETags, so a reload within the
  * refresh time costs no API quota (60 requests per hour without a token).
  */
-const CARD_VERSION = "1.4.1";
+const CARD_VERSION = "1.4.2";
 const API = "https://api.github.com";
 const CACHE_PREFIX = "grs-card:";
 const HISTORY_KEY = "github-release-stats-card-history";
@@ -206,12 +206,27 @@ export const countToday = (history, summary, now = Date.now()) => {
   };
 };
 
-/** Clean a GitHub page title: "Home · owner/repo Wiki · GitHub" -> "Home". */
+/**
+ * A readable name for a popular page. GitHub sends titles like
+ * "/wiki/Listenkarte" or "Overview" (older answers: "Home · owner/repo Wiki
+ * · GitHub"), so the name mostly comes from the path.
+ */
+const PAGE_NAMES = { releases: "Releases", issues: "Issues", pulls: "Pull Requests", pulse: "Pulse", branches: "Branches", tags: "Tags", commits: "Commits", actions: "Actions", discussions: "Diskussionen", "graphs/traffic": "Traffic", stargazers: "Sterne", forks: "Forks" };
 export const pageTitle = (title, path) => {
-  const first = String(title || "").split(" · ")[0].trim();
-  if (first && !/^GitHub\b/.test(first)) return first;
-  const parts = String(path || "").split("/").filter(Boolean);
-  return parts.length > 2 ? decodeURIComponent(parts.slice(2).join("/")).replace(/-/g, " ") : parts.slice(0, 2).join("/") || "–";
+  const rel = String(path || "").split("/").filter(Boolean).slice(2).map((p) => {
+    try {
+      return decodeURIComponent(p);
+    } catch (err) {
+      return p;
+    }
+  });
+  const t = String(title || "").trim();
+  if (!rel.length) return "Repository-Startseite";
+  if (rel[0] === "wiki") return rel.length === 1 ? "Wiki-Startseite" : rel.slice(1).join("/").replace(/-/g, " ");
+  if (t && !t.startsWith("/") && t !== "Overview") return t.split(" · ")[0].trim() || t;
+  if ((rel[0] === "blob" || rel[0] === "tree") && rel.length > 2) return rel.slice(2).join("/");
+  const joined = rel.join("/");
+  return PAGE_NAMES[joined] || PAGE_NAMES[rel[0]] || joined;
 };
 
 /**
@@ -981,9 +996,11 @@ class GithubReleaseStatsCard extends HTMLElement {
           auth ? "Token fehlt, ist abgelaufen oder hat keine Berechtigung „Administration: Read-only“." : escapeHtml(errors.join(", "))
         }</div></div>`;
     }
-    const series = trafficSeries(a.history, this._config.traffic_days);
-    const recorded = series.first ? Math.round((Date.now() - new Date(series.first).getTime()) / 86400000) + 1 : 0;
-    const spanLabel = recorded && recorded < this._config.traffic_days ? `${recorded} Tage` : `${this._config.traffic_days} Tage`;
+    const firstDay = Object.keys(a.history || {}).sort()[0];
+    const recorded = firstDay ? Math.round((Date.now() - new Date(`${firstDay}T00:00:00Z`).getTime()) / 86400000) + 1 : 0;
+    const span = Math.max(7, Math.min(this._config.traffic_days, recorded || this._config.traffic_days));
+    const series = trafficSeries(a.history, span);
+    const spanLabel = `${span} Tage`;
     const kpi = (icon, value, label, title, cls = "") =>
       `<div class="tr-kpi ${cls}" title="${escapeHtml(title)}"><ha-icon icon="${icon}"></ha-icon><span class="tr-num">${shortNumber(value)}</span><span class="tr-lbl">${label}</span></div>`;
     const kpis = `<div class="tr-kpis">
@@ -998,8 +1015,11 @@ class GithubReleaseStatsCard extends HTMLElement {
     const h = 48;
     const slot = w / series.days.length;
     const bw = Math.max(1, slot * 0.4);
-    const max = Math.max(1, ...series.days.map((d) => Math.max(d.views, d.clones)));
+    // Each series on its own scale: clones (bots, HACS checks) dwarf views
+    const maxV = Math.max(1, ...series.days.map((d) => d.views));
+    const maxC = Math.max(1, ...series.days.map((d) => d.clones));
     const bar = (x, v, cls, title) => {
+      const max = cls === "v" ? maxV : maxC;
       const bh = v ? Math.max(2, Math.round((v / max) * (h - 2))) : 1;
       return `<rect x="${x.toFixed(1)}" y="${h - bh}" width="${bw.toFixed(1)}" height="${bh}" rx="1" class="${v ? cls : "zero"}"><title>${title}</title></rect>`;
     };
@@ -1017,7 +1037,7 @@ class GithubReleaseStatsCard extends HTMLElement {
         <div class="tr-chart-head">
           <span><i class="dot v"></i>${number(series.views)} Aufrufe</span>
           <span><i class="dot c"></i>${number(series.clones)} Clones</span>
-          <span class="tr-span">${spanLabel}</span>
+          <span class="tr-span" title="Aufrufe und Clones haben je eine eigene Skala">${spanLabel}</span>
         </div>
         <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${number(series.views)} Aufrufe und ${number(series.clones)} Clones in ${spanLabel}">${bars}</svg>
       </div>`;

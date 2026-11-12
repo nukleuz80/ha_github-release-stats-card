@@ -1,6 +1,6 @@
 # GitHub Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.4.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.4.2-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇬🇧 [English version](README.md)
@@ -25,7 +25,7 @@ Eine Lovelace-Karte für Home Assistant mit den Statistiken deiner GitHub-Reposi
 ## Installation
 
 1. [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) herunterladen und nach `/config/www/` kopieren.
-2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.4.1` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
+2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.4.2` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
 3. Den Browser neu laden. Nach einem Update `?v=` hochzählen, damit Browser die neue Version laden.
 
 ## Konfiguration
@@ -92,6 +92,7 @@ Gezählt werden nur Dateien, die an einem Release hängen. Die Quellcode-Archive
 
 | Version | Datum | Highlights |
 | :--- | :--- | :--- |
+| 1.4.2 | 12.11.2026 | Lesbare Namen für beliebte Seiten (GitHub schickt als Titel nur noch Pfade), Aufrufe und Clones mit eigener Skala im Diagramm, Diagramm nur über aufgezeichnete Tage |
 | 1.4.1 | 12.11.2026 | Neuer Name GitHub Stats (Kartentyp, Datei und Repository bleiben gleich) |
 | 1.4.0 | 12.11.2026 | Besucher & Clones (Aufrufe, Clones, Herkunft, beliebte Seiten, Tagesdiagramm) über einen Home-Assistant-Sensor mit Token, Wiki-Bereich mit zuletzt geänderten und meistgelesenen Seiten |
 | 1.3.1 | 11.11.2026 | Beim Aufklappen eines Releases werden nun Release-Name, eine Mini-Beschreibung (Changelog-Auszug) und die Dateiliste übersichtlich angezeigt |

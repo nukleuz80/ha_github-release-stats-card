@@ -1,6 +1,6 @@
 # GitHub Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.4.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.4.2-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇩🇪 [Deutsche Version](README_de.md)
@@ -27,7 +27,7 @@ A Lovelace card for Home Assistant with the statistics of your GitHub repositori
 ## Installation
 
 1. Download [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) and copy it to `/config/www/`.
-2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.4.1` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
+2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.4.2` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
 3. Reload the browser. When you update the file, raise `?v=` so browsers load the new version.
 
 ## Configuration
@@ -94,6 +94,7 @@ Only files attached to a release (assets) are counted. The source code archives 
 
 | Version | Date | Highlights |
 | :--- | :--- | :--- |
+| 1.4.2 | 2026-11-12 | Readable names for popular pages (GitHub now sends only paths as titles); views and clones each on their own chart scale; chart covers only recorded days |
 | 1.4.1 | 2026-11-12 | Renamed to GitHub Stats (card type, file and repository stay the same) |
 | 1.4.0 | 2026-11-12 | Views & clones (views, clones, referrers, popular pages, daily chart) through a Home Assistant sensor with a token; wiki section with recently changed and most read pages |
 | 1.3.1 | 2026-11-11 | Expanding a release now reveals its title, mini description excerpt (changelog notes), and file downloads list |
