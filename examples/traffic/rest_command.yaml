@@ -1,0 +1,11 @@
+# Add to the rest_command: section of configuration.yaml (or rest_command.yaml).
+# secrets.yaml needs:   github_stats_token: "Bearer github_pat_..."
+github_api_get:
+  url: "https://api.github.com/{{ path }}"
+  method: GET
+  headers:
+    authorization: !secret github_stats_token
+    accept: "application/vnd.github+json"
+    x-github-api-version: "2022-11-28"
+    user-agent: "home-assistant-github-release-stats"
+  timeout: 20

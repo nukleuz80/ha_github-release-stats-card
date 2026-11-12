@@ -14,11 +14,17 @@
  * time it loads and keeps one count per day for 31 days, stored per Home
  * Assistant user (frontend user data) so all devices share it.
  *
+ * Optional traffic (views, clones, referrers, popular pages) comes from a
+ * Home Assistant sensor with the attribute github_traffic: true, filled with
+ * a GitHub token on the Home Assistant side, so the token never reaches the
+ * browser. The wiki section lists the latest wiki edits from the public
+ * events of the repository.
+ *
  * Data comes straight from the public GitHub API in the browser. Answers are
  * cached per repository and revalidated with ETags, so a reload within the
  * refresh time costs no API quota (60 requests per hour without a token).
  */
-const CARD_VERSION = "1.3.1";
+const CARD_VERSION = "1.4.0";
 const API = "https://api.github.com";
 const CACHE_PREFIX = "grs-card:";
 const HISTORY_KEY = "github-release-stats-card-history";
@@ -34,6 +40,9 @@ const DEFAULTS = {
   hide_empty: false,
   show_details: true,
   show_activity: true,
+  show_traffic: true,
+  show_wiki: false,
+  traffic_days: 30,
 };
 
 const escapeHtml = (value) =>
@@ -197,6 +206,57 @@ export const countToday = (history, summary, now = Date.now()) => {
   };
 };
 
+/** Clean a GitHub page title: "Home · owner/repo Wiki · GitHub" -> "Home". */
+export const pageTitle = (title, path) => {
+  const first = String(title || "").split(" · ")[0].trim();
+  if (first && !/^GitHub\b/.test(first)) return first;
+  const parts = String(path || "").split("/").filter(Boolean);
+  return parts.length > 2 ? decodeURIComponent(parts.slice(2).join("/")).replace(/-/g, " ") : parts.slice(0, 2).join("/") || "–";
+};
+
+/**
+ * Wiki edits from slim repository events ({ t, actor, pages }): the pages
+ * newest first with their last change, the time of the last edit and the
+ * number of page edits in the last 30 days.
+ */
+export const wikiSummary = (events, now = Date.now()) => {
+  const edits = [];
+  for (const e of events || []) {
+    if (!e || !Array.isArray(e.pages)) continue;
+    for (const p of e.pages) edits.push({ t: e.t, actor: e.actor, title: p.title, action: p.action, url: p.url });
+  }
+  edits.sort((a, b) => new Date(b.t) - new Date(a.t));
+  const seen = new Map();
+  for (const e of edits) if (!seen.has(e.title)) seen.set(e.title, e);
+  return {
+    pages: [...seen.values()],
+    last: edits[0]?.t || null,
+    edits30: edits.filter((e) => now - new Date(e.t).getTime() <= 30 * 86400000).length,
+    created: [...seen.values()].filter((e) => e.action === "created").length,
+  };
+};
+
+/** UTC calendar day as "YYYY-MM-DD", like the days GitHub reports traffic for. */
+const utcDay = (ts) => new Date(ts).toISOString().slice(0, 10);
+
+/**
+ * The last `days` days of a traffic history ({ day: [views, visitors,
+ * clones, unique clones] }), missing days as zero, plus their sums and the
+ * first day recorded.
+ */
+export const trafficSeries = (history, days = 30, now = Date.now()) => {
+  const h = history && typeof history === "object" ? history : {};
+  const list = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = utcDay(now - i * 86400000);
+    const v = Array.isArray(h[day]) ? h[day] : [0, 0, 0, 0];
+    list.push({ day, views: v[0] || 0, visitors: v[1] || 0, clones: v[2] || 0, uniqueClones: v[3] || 0 });
+  }
+  const sum = (k) => list.reduce((a, d) => a + d[k], 0);
+  const keys = Object.keys(h).sort();
+  return { days: list, views: sum("views"), clones: sum("clones"), first: keys[0] || null };
+};
+
 /** Turn "owner/repo", a GitHub link or "owner" into its parts. */
 export const parseTarget = (input) => {
   let text = String(input || "").trim();
@@ -251,6 +311,10 @@ class GithubReleaseStatsCard extends HTMLElement {
     this._rendered = false;
     this._history = null; // { "owner/repo": { day: { first, last } } }
     this._historyLoad = null;
+    this._wiki = new Map(); // "owner/repo" -> { state, summary, error }
+    this._trafficIds = new Map(); // "owner/repo" (lower case) -> entity_id or null
+    this._trafficLookup = new Map(); // "owner/repo" (lower case) -> last lookup time
+    this._trafficSig = "";
   }
 
   static getStubConfig() {
@@ -285,6 +349,9 @@ class GithubReleaseStatsCard extends HTMLElement {
         { name: "show_search", selector: { boolean: {} } },
         { name: "show_details", selector: { boolean: {} } },
         { name: "show_activity", selector: { boolean: {} } },
+        { name: "show_traffic", selector: { boolean: {} } },
+        { name: "traffic_days", selector: { number: { min: 7, max: 90, mode: "box", unit_of_measurement: "Tage" } } },
+        { name: "show_wiki", selector: { boolean: {} } },
         { name: "hide_empty", selector: { boolean: {} } },
       ],
       computeLabel: (s) =>
@@ -298,6 +365,9 @@ class GithubReleaseStatsCard extends HTMLElement {
           hide_empty: "Releases ohne Dateien ausblenden",
           show_details: "Sterne, Forks, Issues, Commits und letzten Push zeigen",
           show_activity: "Commits der letzten 12 Wochen zeigen",
+          show_traffic: "Aufrufe, Clones, Herkunft und beliebte Seiten zeigen",
+          traffic_days: "Tage im Traffic-Diagramm",
+          show_wiki: "Wiki-Änderungen zeigen",
         })[s.name],
       computeHelper: (s) =>
         ({
@@ -306,6 +376,8 @@ class GithubReleaseStatsCard extends HTMLElement {
           refresh: "Zwischenspeicher pro Repository. GitHub erlaubt ohne Anmeldung 60 Abfragen pro Stunde.",
           hide_empty: "Nur Dateien in Releases (Assets) zählen Downloads.",
           show_details: "Kostet zwei weitere GitHub-Abfragen pro Repository und Aktualisierung (unverändert: keine).",
+          show_traffic: "Braucht einen Sensor in Home Assistant mit Token (siehe README). Ohne Sensor bleibt der Bereich ausgeblendet.",
+          show_wiki: "Aus den öffentlichen Ereignissen des Repositories (letzte 90 Tage), eine Abfrage pro Aktualisierung.",
         })[s.name],
     };
   }
@@ -329,7 +401,10 @@ class GithubReleaseStatsCard extends HTMLElement {
       releases: Math.max(1, Number(config.releases) || DEFAULTS.releases),
       refresh: Math.max(5, Number(config.refresh) || DEFAULTS.refresh),
       layout: config.layout === "modern" ? "modern" : "classic",
+      traffic_days: Math.min(90, Math.max(7, Number(config.traffic_days) || DEFAULTS.traffic_days)),
     };
+    this._trafficIds.clear();
+    this._trafficSig = "";
     if (this.isConnected) {
       this._render();
       this._loadAll();
@@ -341,6 +416,13 @@ class GithubReleaseStatsCard extends HTMLElement {
     if (!this._rendered) {
       this._render();
       this._loadAll();
+      return;
+    }
+    // Redraw when a traffic sensor got new numbers
+    const sig = this._trafficSignature();
+    if (sig !== this._trafficSig) {
+      this._trafficSig = sig;
+      this._renderBody();
     }
   }
 
@@ -388,7 +470,8 @@ class GithubReleaseStatsCard extends HTMLElement {
   async _fetchList(path, maxPages = 10, force = false, slim = (items) => items) {
     const cached = this._readCache(path);
     const pagesOk = cached && Array.isArray(cached.pages);
-    const hasBodyField = !pagesOk || cached.pages.every((p) => p.every((r) => r.body !== undefined));
+    // Releases cached before v1.3.1 lack the body; other lists have none
+    const hasBodyField = !pagesOk || !path.includes("/releases") || cached.pages.every((p) => p.every((r) => r.body !== undefined));
     if (pagesOk && !force && hasBodyField && Date.now() - cached.time < this._config.refresh * 60000) {
       const items = cached.pages.flat();
       items.fetched = cached.time; // when GitHub gave these numbers
@@ -558,12 +641,63 @@ class GithubReleaseStatsCard extends HTMLElement {
     }
   }
 
+  // --- Traffic (Home Assistant sensor) and wiki ---
+
+  /** The Home Assistant sensor holding the traffic of a repository, if any. */
+  _trafficEntity(key) {
+    if (!this._config.show_traffic || !this._hass?.states) return null;
+    const k = key.toLowerCase();
+    const id = this._trafficIds.get(k);
+    if (id && this._hass.states[id]) return this._hass.states[id];
+    const now = Date.now();
+    if (id === null && now - (this._trafficLookup.get(k) || 0) < 60000) return null;
+    const found = Object.values(this._hass.states).find(
+      (s) => s.attributes?.github_traffic === true && String(s.attributes.repository || "").toLowerCase() === k
+    );
+    this._trafficIds.set(k, found ? found.entity_id : null);
+    this._trafficLookup.set(k, now);
+    return found || null;
+  }
+
+  _trafficSignature() {
+    if (!this._config.show_traffic) return "";
+    const keys = [...this._config.repositories];
+    if (this._search?.repo) keys.push(`${this._search.owner}/${this._search.repo}`);
+    return keys.map((k) => this._trafficEntity(k)?.last_updated || "").join("|");
+  }
+
+  async _loadWiki(key, force = false) {
+    if (!this._config.show_wiki) return;
+    const entry = this._wiki.get(key) || {};
+    if (entry.state === "loading") return;
+    this._wiki.set(key, { ...entry, state: "loading" });
+    try {
+      // Up to 300 events (about 90 days); other events stay as placeholders so paging works
+      const events = await this._fetchList(`/repos/${key}/events`, 3, force, (list) =>
+        list.map((e) =>
+          e.type === "GollumEvent"
+            ? {
+                t: e.created_at,
+                actor: e.actor?.login || "",
+                pages: (e.payload?.pages || []).map((p) => ({ title: p.title, action: p.action, url: p.html_url })),
+              }
+            : 0
+        )
+      );
+      this._wiki.set(key, { state: "ok", summary: wikiSummary(events) });
+    } catch (err) {
+      this._wiki.set(key, { ...entry, state: "error", error: err.message || String(err) });
+    }
+    this._renderBody();
+  }
+
   _loadAll(force = false) {
     const keys = [...this._config.repositories];
     if (this._search && this._search.repo) keys.push(`${this._search.owner}/${this._search.repo}`);
     [...new Set(keys)].forEach((key) => {
       this._loadRepo(key, force);
       this._loadDetails(key, force);
+      this._loadWiki(key, force);
     });
   }
 
@@ -598,6 +732,7 @@ class GithubReleaseStatsCard extends HTMLElement {
       this._userRepos = null;
       this._loadRepo(`${target.owner}/${target.repo}`);
       this._loadDetails(`${target.owner}/${target.repo}`);
+      this._loadWiki(`${target.owner}/${target.repo}`);
     } else {
       this._search = null;
       this._loadUserRepos(target.owner);
@@ -663,6 +798,7 @@ class GithubReleaseStatsCard extends HTMLElement {
       if (input) input.value = `${owner}/${repo}`;
       this._loadRepo(`${owner}/${repo}`);
       this._loadDetails(`${owner}/${repo}`);
+      this._loadWiki(`${owner}/${repo}`);
       return;
     } else if (action === "retry") {
       this._loadRepo(key, true);
@@ -779,8 +915,10 @@ class GithubReleaseStatsCard extends HTMLElement {
       ${head(total)}
       ${stats}
       ${this._detailsHtml(key)}
+      ${this._trafficHtml(key)}
       <div class="releases">${rows}</div>
       ${more}
+      ${this._wikiHtml(key)}
       ${hint}
     </section>`;
   }
@@ -822,6 +960,159 @@ class GithubReleaseStatsCard extends HTMLElement {
       }
     }
     return html;
+  }
+
+  /** Views, clones, referrers and popular pages from the Home Assistant sensor. */
+  _trafficHtml(key) {
+    const ent = this._trafficEntity(key);
+    if (!ent) return "";
+    const a = ent.attributes || {};
+    const errors = Array.isArray(a.errors) ? a.errors : [];
+    const hasData = Object.keys(a.history || {}).length > 0 || a.views_14d || a.clones_14d;
+    const updated = a.updated ? `aktualisiert ${ago(a.updated)}` : "";
+    const head = (sub) => `<div class="tr-head">
+        <ha-icon icon="mdi:eye-outline"></ha-icon>
+        <div class="tr-titles"><span class="tr-title">Besucher &amp; Clones</span><span class="tr-sub">${sub}</span></div>
+      </div>`;
+    if (!hasData && errors.length) {
+      const auth = errors.some((e) => /HTTP (401|403)/.test(e));
+      return `<div class="tr-box">${head(escapeHtml(updated))}
+        <div class="note error small"><ha-icon icon="mdi:key-alert-outline"></ha-icon> ${
+          auth ? "Token fehlt, ist abgelaufen oder hat keine Berechtigung „Administration: Read-only“." : escapeHtml(errors.join(", "))
+        }</div></div>`;
+    }
+    const series = trafficSeries(a.history, this._config.traffic_days);
+    const recorded = series.first ? Math.round((Date.now() - new Date(series.first).getTime()) / 86400000) + 1 : 0;
+    const spanLabel = recorded && recorded < this._config.traffic_days ? `${recorded} Tage` : `${this._config.traffic_days} Tage`;
+    const kpi = (icon, value, label, title, cls = "") =>
+      `<div class="tr-kpi ${cls}" title="${escapeHtml(title)}"><ha-icon icon="${icon}"></ha-icon><span class="tr-num">${shortNumber(value)}</span><span class="tr-lbl">${label}</span></div>`;
+    const kpis = `<div class="tr-kpis">
+        ${kpi("mdi:eye-outline", a.views_14d, "Aufrufe 14 T", `${number(a.views_14d)} Aufrufe in 14 Tagen`)}
+        ${kpi("mdi:account-outline", a.view_uniques_14d, "Besucher 14 T", `${number(a.view_uniques_14d)} einzelne Besucher in 14 Tagen`)}
+        ${kpi("mdi:source-branch", a.clones_14d, "Clones 14 T", `${number(a.clones_14d)} Clones in 14 Tagen`, "green")}
+        ${kpi("mdi:account-multiple-outline", a.clone_uniques_14d, "Einzeln 14 T", `${number(a.clone_uniques_14d)} einzelne Clones in 14 Tagen`, "green")}
+      </div>`;
+
+    // Grouped bars per day: views (accent) and clones (green)
+    const w = 300;
+    const h = 48;
+    const slot = w / series.days.length;
+    const bw = Math.max(1, slot * 0.4);
+    const max = Math.max(1, ...series.days.map((d) => Math.max(d.views, d.clones)));
+    const bar = (x, v, cls, title) => {
+      const bh = v ? Math.max(2, Math.round((v / max) * (h - 2))) : 1;
+      return `<rect x="${x.toFixed(1)}" y="${h - bh}" width="${bw.toFixed(1)}" height="${bh}" rx="1" class="${v ? cls : "zero"}"><title>${title}</title></rect>`;
+    };
+    const bars = series.days
+      .map((d, i) => {
+        const label = date(`${d.day}T12:00:00Z`);
+        const x = i * slot + slot * 0.1;
+        return (
+          bar(x, d.views, "v", `${label}: ${number(d.views)} Aufrufe, ${number(d.visitors)} Besucher`) +
+          bar(x + bw, d.clones, "c", `${label}: ${number(d.clones)} Clones, ${number(d.uniqueClones)} einzeln`)
+        );
+      })
+      .join("");
+    const chart = `<div class="tr-chart">
+        <div class="tr-chart-head">
+          <span><i class="dot v"></i>${number(series.views)} Aufrufe</span>
+          <span><i class="dot c"></i>${number(series.clones)} Clones</span>
+          <span class="tr-span">${spanLabel}</span>
+        </div>
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${number(series.views)} Aufrufe und ${number(series.clones)} Clones in ${spanLabel}">${bars}</svg>
+      </div>`;
+
+    const rows = (list, render) => {
+      const max2 = Math.max(1, ...list.map((r) => r.count || 0));
+      return list
+        .slice(0, 5)
+        .map((r) => {
+          const [icon, label, href] = render(r);
+          const inner = `<ha-icon icon="${icon}"></ha-icon><span class="tr-row-name">${escapeHtml(label)}</span>
+            <span class="tr-row-num" title="${number(r.uniques)} einzelne">${number(r.count)}</span>
+            <span class="tr-row-bar" aria-hidden="true"><span style="width:${Math.max(3, Math.round(((r.count || 0) / max2) * 100))}%"></span></span>`;
+          return href
+            ? `<a class="tr-row" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>`
+            : `<div class="tr-row">${inner}</div>`;
+        })
+        .join("");
+    };
+    const referrers = Array.isArray(a.referrers) ? a.referrers : [];
+    const paths = Array.isArray(a.paths) ? a.paths : [];
+    const refHtml = referrers.length
+      ? `<div class="tr-list"><div class="tr-list-title">Herkunft</div>${rows(referrers, (r) => [
+          /google|bing|duckduckgo/i.test(r.referrer) ? "mdi:magnify" : /github/i.test(r.referrer) ? "mdi:github" : "mdi:web",
+          r.referrer,
+          null,
+        ])}</div>`
+      : "";
+    const pathHtml = paths.length
+      ? `<div class="tr-list"><div class="tr-list-title">Beliebte Seiten</div>${rows(paths, (r) => [
+          /\/wiki(\/|$)/.test(r.path) ? "mdi:book-open-page-variant-outline" : "mdi:file-document-outline",
+          pageTitle(r.title, r.path),
+          `https://github.com${r.path}`,
+        ])}</div>`
+      : "";
+    const warn = errors.length
+      ? `<div class="note small tr-warn" title="${escapeHtml(errors.join(", "))}"><ha-icon icon="mdi:alert-outline"></ha-icon> Letzter Abruf unvollständig, Werte von früher</div>`
+      : "";
+    return `<div class="tr-box">
+      ${head(`GitHub zählt 14 Tage · ${escapeHtml(updated)}`)}
+      ${kpis}
+      ${chart}
+      ${refHtml || pathHtml ? `<div class="tr-lists">${refHtml}${pathHtml}</div>` : ""}
+      ${warn}
+    </div>`;
+  }
+
+  /** Latest wiki edits, and the most read wiki pages when traffic is there. */
+  _wikiHtml(key) {
+    if (!this._config.show_wiki) return "";
+    const w = this._wiki.get(key);
+    const link = `https://github.com/${key}/wiki`;
+    const head = (sub) => `<div class="tr-head">
+        <ha-icon icon="mdi:book-open-page-variant-outline"></ha-icon>
+        <div class="tr-titles"><span class="tr-title">Wiki</span><span class="tr-sub">${sub}</span></div>
+        <a class="icon-btn small" href="${link}" target="_blank" rel="noopener noreferrer" title="Wiki öffnen" aria-label="Wiki öffnen"><ha-icon icon="mdi:open-in-new"></ha-icon></a>
+      </div>`;
+    if (!w || (!w.summary && w.state === "loading")) return `<div class="tr-box">${head("Lade …")}</div>`;
+    if (!w.summary) return `<div class="tr-box">${head("")}<div class="note error small">${escapeHtml(w.error)}</div></div>`;
+    const s = w.summary;
+    if (!s.pages.length) return `<div class="tr-box">${head("Keine Änderungen in den letzten 90 Tagen")}</div>`;
+    const sub = `Zuletzt geändert ${ago(s.last)} · ${number(s.edits30)} Änderungen in 30 Tagen`;
+    const actions = { created: "neu", edited: "bearbeitet", deleted: "gelöscht" };
+    const recent = s.pages
+      .slice(0, 5)
+      .map(
+        (p) => `<a class="tr-row wiki" href="${escapeHtml(p.url || link)}" target="_blank" rel="noopener noreferrer">
+          <ha-icon icon="${p.action === "created" ? "mdi:file-plus-outline" : "mdi:file-edit-outline"}"></ha-icon>
+          <span class="tr-row-name">${escapeHtml(p.title)}</span>
+          <span class="tr-row-meta" title="${date(p.t)}${p.actor ? ` · ${escapeHtml(p.actor)}` : ""}">${actions[p.action] || escapeHtml(p.action)} · ${ago(p.t)}</span>
+        </a>`
+      )
+      .join("");
+    // Wiki pages among GitHub's popular pages (needs the traffic sensor)
+    const ent = this._trafficEntity(key);
+    const wikiPaths = (Array.isArray(ent?.attributes?.paths) ? ent.attributes.paths : []).filter((r) => /\/wiki(\/|$)/.test(r.path));
+    const read = wikiPaths.length
+      ? `<div class="tr-list"><div class="tr-list-title">Meistgelesen (14 Tage)</div>${wikiPaths
+          .slice(0, 5)
+          .map(
+            (r) => `<a class="tr-row wiki" href="https://github.com${escapeHtml(r.path)}" target="_blank" rel="noopener noreferrer">
+              <ha-icon icon="mdi:eye-outline"></ha-icon>
+              <span class="tr-row-name">${escapeHtml(pageTitle(r.title, r.path))}</span>
+              <span class="tr-row-num" title="${number(r.uniques)} einzelne Besucher">${number(r.count)}</span>
+            </a>`
+          )
+          .join("")}</div>`
+      : "";
+    return `<div class="tr-box">
+      ${head(sub)}
+      <div class="tr-lists">
+        <div class="tr-list"><div class="tr-list-title">${number(s.pages.length)} Seiten geändert (90 Tage)</div>${recent}</div>
+        ${read}
+      </div>
+    </div>`;
   }
 
   _releaseHtml(key, r, max, todayCount) {
@@ -1033,8 +1324,10 @@ class GithubReleaseStatsCard extends HTMLElement {
       ${head}
       ${kpiGrid}
       ${chartHtml}
+      ${this._trafficHtml(key)}
       <div class="m-releases">${rows}</div>
       ${more}
+      ${this._wikiHtml(key)}
       ${hint}
     </section>`;
   }
@@ -1672,7 +1965,59 @@ const STYLE = `
     --mdc-icon-size: 13px;
   }
 
+  .tr-box {
+    margin: 0 0 10px; padding: 10px 12px; border-radius: 10px;
+    background: var(--grs-surface); display: flex; flex-direction: column; gap: 8px;
+  }
+  .repo .more + .tr-box, .repo .m-btn-pill + .tr-box, .releases + .tr-box, .m-releases + .tr-box { margin-top: 10px; }
+  .tr-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .tr-head > ha-icon { --mdc-icon-size: 20px; color: var(--grs-accent); flex: none; }
+  .tr-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+  .tr-title { font-weight: 600; font-size: 0.9rem; color: var(--primary-text-color); }
+  .tr-sub { font-size: 0.72rem; color: var(--grs-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tr-head a.icon-btn { text-decoration: none; }
+  .tr-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .tr-kpi {
+    display: grid; grid-template-columns: auto 1fr; grid-template-areas: "icon num" "lbl lbl";
+    align-items: center; column-gap: 5px; padding: 6px 8px; border-radius: 8px;
+    background: var(--card-background-color, var(--ha-card-background, transparent));
+  }
+  .tr-kpi ha-icon { grid-area: icon; --mdc-icon-size: 15px; color: var(--grs-accent); }
+  .tr-kpi.green ha-icon { color: var(--grs-green); }
+  .tr-num { grid-area: num; font-weight: 700; font-size: 1.05rem; color: var(--primary-text-color); font-variant-numeric: tabular-nums; }
+  .tr-lbl { grid-area: lbl; font-size: 0.68rem; color: var(--grs-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tr-chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 0.74rem; color: var(--secondary-text-color); margin-bottom: 4px; }
+  .tr-chart-head span { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+  .tr-span { margin-left: auto; color: var(--grs-muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+  .dot.v { background: var(--grs-accent); }
+  .dot.c { background: var(--grs-green); }
+  .tr-chart svg { display: block; width: 100%; height: 48px; }
+  .tr-chart rect.v { fill: var(--grs-accent); }
+  .tr-chart rect.c { fill: var(--grs-green); }
+  .tr-chart rect.zero { fill: rgba(127, 127, 127, 0.25); }
+  .tr-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 14px; }
+  .tr-list { display: flex; flex-direction: column; min-width: 0; }
+  .tr-list-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--grs-muted); margin: 2px 0 2px; }
+  .tr-row {
+    display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; grid-template-areas: "icon name num" "bar bar bar";
+    align-items: center; column-gap: 6px; min-height: 32px; padding: 3px 4px; border-radius: 6px;
+    color: var(--primary-text-color); text-decoration: none; font-size: 0.8rem;
+  }
+  a.tr-row:hover, a.tr-row:focus-visible { background: rgba(var(--grs-accent-rgb), 0.1); outline: none; }
+  .tr-row ha-icon { grid-area: icon; --mdc-icon-size: 16px; color: var(--grs-muted); }
+  .tr-row-name { grid-area: name; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tr-row-num { grid-area: num; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tr-row-meta { grid-area: num; font-size: 0.72rem; color: var(--grs-muted); white-space: nowrap; }
+  .tr-row-bar { grid-area: bar; height: 3px; margin-top: 3px; border-radius: 2px; background: rgba(127, 127, 127, 0.18); overflow: hidden; }
+  .tr-row-bar > span { display: block; height: 100%; background: var(--grs-accent); border-radius: 2px; }
+  .tr-row.wiki { grid-template-areas: "icon name num"; }
+  .tr-box .note { margin: 0; display: flex; align-items: center; gap: 6px; }
+  .tr-box .note ha-icon { --mdc-icon-size: 16px; flex: none; }
+  .tr-warn { color: var(--grs-yellow); }
+
   @media (max-width: 440px) {
+    .tr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .m-kpi-grid {
       grid-template-columns: repeat(2, 1fr);
     }
@@ -1700,7 +2045,7 @@ if (!window.customCards.some((c) => c.type === "github-release-stats-card")) {
   window.customCards.push({
     type: "github-release-stats-card",
     name: "GitHub Release Stats",
-    description: "Downloads der Release-Dateien eines oder mehrerer GitHub-Repositories, mit Suche.",
+    description: "Downloads der Release-Dateien eines oder mehrerer GitHub-Repositories, mit Suche, Traffic und Wiki.",
     preview: true,
     documentationURL: "https://github.com/nukleuz80/ha_github-release-stats-card",
   });

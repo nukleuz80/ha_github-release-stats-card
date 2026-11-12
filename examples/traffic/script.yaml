@@ -1,0 +1,54 @@
+# Add to scripts.yaml, or paste the part below "github_traffic_fetch:" into a
+# new script in YAML mode (Settings -> Automations & scenes -> Scripts) with
+# the script ID github_traffic_fetch.
+github_traffic_fetch:
+  alias: GitHub-Traffic abrufen
+  description: >-
+    Fetches views, clones, referrers and popular pages of a repository with
+    rest_command.github_api_get and returns them as the response.
+  icon: mdi:github
+  mode: parallel
+  max: 10
+  fields:
+    repo:
+      name: Repository
+      description: owner/repo
+      required: true
+      example: nukleuz80/ha_brainstorm
+      selector:
+        text: {}
+  sequence:
+    - action: rest_command.github_api_get
+      data:
+        path: "repos/{{ repo }}/traffic/views"
+      response_variable: r_views
+      continue_on_error: true
+    - action: rest_command.github_api_get
+      data:
+        path: "repos/{{ repo }}/traffic/clones"
+      response_variable: r_clones
+      continue_on_error: true
+    - action: rest_command.github_api_get
+      data:
+        path: "repos/{{ repo }}/traffic/popular/referrers"
+      response_variable: r_referrers
+      continue_on_error: true
+    - action: rest_command.github_api_get
+      data:
+        path: "repos/{{ repo }}/traffic/popular/paths"
+      response_variable: r_paths
+      continue_on_error: true
+    - variables:
+        result:
+          repo: "{{ repo }}"
+          views: "{% set r = r_views | default(none) %}{{ r.content if r is not none and r.status == 200 else none }}"
+          clones: "{% set r = r_clones | default(none) %}{{ r.content if r is not none and r.status == 200 else none }}"
+          referrers: "{% set r = r_referrers | default(none) %}{{ r.content if r is not none and r.status == 200 else none }}"
+          paths: "{% set r = r_paths | default(none) %}{{ r.content if r is not none and r.status == 200 else none }}"
+          errors: >-
+            {% set ns = namespace(e=[]) %}{% for name, r in [('Aufrufe', r_views | default(none)),
+            ('Clones', r_clones | default(none)), ('Herkunft', r_referrers | default(none)),
+            ('Seiten', r_paths | default(none))] %}{% if r is none %}{% set ns.e = ns.e + [name ~ ': keine Antwort'] %}{%
+            elif r.status != 200 %}{% set ns.e = ns.e + [name ~ ': HTTP ' ~ r.status] %}{% endif %}{% endfor %}{{ ns.e }}
+    - stop: Fertig
+      response_variable: result

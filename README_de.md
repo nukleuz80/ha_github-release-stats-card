@@ -1,6 +1,6 @@
 # GitHub Release Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.3.1-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇬🇧 [English version](README.md)
@@ -16,14 +16,16 @@ Eine Lovelace-Karte für Home Assistant, die zeigt, wie oft die Dateien deiner G
 - **Suche** oben: `owner/repo`, ein GitHub-Link oder ein Benutzername für eine Liste seiner Repositories.
 - **Details**: Sterne, Forks, offene Issues, Commits insgesamt und der letzte Push.
 - **Aktivität**: Commits der letzten 12 Wochen als Balkendiagramm (oder Spline-Chart im Modern-Design).
-- **Kein Token, kein Server**: Die Karte liest das öffentliche GitHub-API direkt im Browser. Antworten werden zwischengespeichert und mit ETags geprüft, ein Neuladen des Dashboards kostet also kein Kontingent (60 Abfragen pro Stunde ohne Token).
+- **Besucher & Clones** (optional): Aufrufe, einzelne Besucher, Clones, Herkunft (Google, Forum, Reddit …) und beliebte Seiten, mit Tagesdiagramm. Braucht einen GitHub-Token, der in Home Assistant bleibt, siehe [Besucher & Clones einrichten](#besucher--clones-einrichten).
+- **Wiki** (optional): zuletzt geänderte Wiki-Seiten, Änderungen der letzten 30 Tage und mit Traffic-Sensor die meistgelesenen Wiki-Seiten.
+- **Kein Token im Browser, kein Server**: Die Karte liest das öffentliche GitHub-API direkt im Browser. Antworten werden zwischengespeichert und mit ETags geprüft, ein Neuladen des Dashboards kostet also kein Kontingent (60 Abfragen pro Stunde ohne Token).
 - Nutzt die Farben des Home-Assistant-Themes und von [Catppuccin](https://github.com/catppuccin/home-assistant), wenn vorhanden. Funktioniert hell, dunkel und auf dem Handy.
 - Grafischer Editor im Dashboard.
 
 ## Installation
 
 1. [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) herunterladen und nach `/config/www/` kopieren.
-2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.3.1` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
+2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.4.0` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
 3. Den Browser neu laden. Nach einem Update `?v=` hochzählen, damit Browser die neue Version laden.
 
 ## Konfiguration
@@ -49,7 +51,26 @@ repositories:
 | `show_search` | `true` | Suchleiste oben |
 | `show_details` | `true` | Sterne, Forks, Issues, Commits und letzter Push |
 | `show_activity` | `true` | Commits der letzten 12 Wochen |
+| `show_traffic` | `true` | Besucher & Clones, sobald ein passender Sensor existiert |
+| `traffic_days` | `30` | Tage im Traffic-Diagramm (7 bis 90) |
+| `show_wiki` | `false` | Wiki-Bereich: zuletzt geänderte Seiten (eine Abfrage pro Aktualisierung) |
 | `hide_empty` | `false` | Releases ohne Dateien ausblenden |
+
+## Besucher & Clones einrichten
+
+GitHub gibt Aufrufe, Clones, Herkunft und beliebte Seiten nur mit einem Token heraus, und auch nur für Repositories, auf die der Token Schreibzugriff hat. Damit der Token nicht in der Dashboard-Konfiguration oder im Browser landet, holt Home Assistant die Zahlen selbst. Die Karte liest nur einen Sensor.
+
+1. **Token anlegen:** GitHub → Settings → Developer settings → [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new). Unter *Repository access* nur die gewünschten Repositories wählen, unter *Permissions* **Administration: Read-only**. Mehr braucht es nicht.
+2. **`secrets.yaml`:** `github_stats_token: "Bearer github_pat_…"` (mit `Bearer ` davor).
+3. Die drei Bausteine aus [`examples/traffic`](examples/traffic) übernehmen:
+   - [`rest_command.yaml`](examples/traffic/rest_command.yaml): GitHub-Abfrage mit dem Token
+   - [`script.yaml`](examples/traffic/script.yaml): Skript `github_traffic_fetch`, holt die vier Werte eines Repositories
+   - [`template.yaml`](examples/traffic/template.yaml): Trigger-Template-Sensor pro Repository, stündlich aktualisiert
+4. Konfiguration prüfen und unter **Entwicklerwerkzeuge → YAML** „REST-Befehle“ und „Template-Entitäten“ neu laden.
+
+Die Karte findet den Sensor selbst über die Attribute `github_traffic: true` und `repository`. GitHub hebt Traffic nur 14 Tage auf. Der Sensor sammelt die Tageswerte deshalb im Attribut `history` (90 Tage), so zeigt das Diagramm auch längere Zeiträume. Sofort aktualisieren: Ereignis `github_traffic_refresh` auslösen.
+
+Wiki-Seiten erscheinen unter „Beliebte Seiten“, wenn sie zu den 10 meistbesuchten Seiten des Repositories gehören. Eine eigene Statistik pro Wiki-Seite bietet GitHub nicht.
 
 ## So wird „heute“ gezählt
 
@@ -71,6 +92,7 @@ Gezählt werden nur Dateien, die an einem Release hängen. Die Quellcode-Archive
 
 | Version | Datum | Highlights |
 | :--- | :--- | :--- |
+| 1.4.0 | 12.11.2026 | Besucher & Clones (Aufrufe, Clones, Herkunft, beliebte Seiten, Tagesdiagramm) über einen Home-Assistant-Sensor mit Token, Wiki-Bereich mit zuletzt geänderten und meistgelesenen Seiten |
 | 1.3.1 | 11.11.2026 | Beim Aufklappen eines Releases werden nun Release-Name, eine Mini-Beschreibung (Changelog-Auszug) und die Dateiliste übersichtlich angezeigt |
 | 1.3.0 | 11.11.2026 | Neues optionales Modern-Design im Venus-Dashboard-Stil (KPI-Kacheln, Spline-Commit-Chart, Pill-Badges, Capsule-Progressbars), umschaltbar über `layout: classic` oder `modern` |
 | 1.2.1 | 11.11.2026 | Eigenes Repository zur manuellen Installation. Eine Zählung behält den Zeitpunkt der GitHub-Antwort, eine zwischengespeicherte Antwort sieht nicht mehr wie neue Downloads aus |

@@ -1,0 +1,74 @@
+# Add to the template: section of configuration.yaml (a list entry).
+# Copy the block per repository and change repo, name and unique_id.
+
+# GitHub-Traffic für die GitHub Release Stats Card
+# (Aufrufe, Clones, Herkunft und beliebte Seiten, inkl. Wiki-Seiten).
+#
+# Holt die Daten stündlich über script.github_traffic_fetch, das wiederum
+# rest_command.github_api_get mit dem Token aus secrets.yaml nutzt. Der Token
+# erreicht nie den Browser; die Karte liest nur die Attribute dieses Sensors.
+#
+# GitHub hebt Traffic nur 14 Tage auf. Das Attribut "history" sammelt die
+# Tageswerte deshalb selbst (90 Tage): Datum -> [Aufrufe, Besucher, Clones,
+# einzelne Clones].
+#
+# Weiteres Repository: den letzten Block kopieren und nur "repo",
+# "name" und "unique_id" anpassen. Manuell aktualisieren:
+# Ereignis "github_traffic_refresh" auslösen.
+
+- trigger: &gh_triggers
+    - trigger: time_pattern
+      minutes: 7
+    - trigger: homeassistant
+      event: start
+    - trigger: event
+      event_type: github_traffic_refresh
+  action:
+    - action: script.github_traffic_fetch
+      data:
+        repo: nukleuz80/ha_brainstorm
+      response_variable: gh
+  sensor:
+    - name: "GitHub Traffic ha_brainstorm"
+      unique_id: github_traffic_nukleuz80_ha_brainstorm
+      <<: &gh_sensor
+        icon: mdi:github
+        unit_of_measurement: "Aufrufe"
+        state_class: measurement
+        state: >
+          {{ gh.views.count if gh is defined and gh.views else this.state }}
+        attributes:
+          github_traffic: "{{ true }}"
+          repository: "{{ gh.repo if gh is defined else this.attributes.repository }}"
+          views_14d: >
+            {{ gh.views.count if gh is defined and gh.views else this.attributes.views_14d | default(0) }}
+          view_uniques_14d: >
+            {{ gh.views.uniques if gh is defined and gh.views else this.attributes.view_uniques_14d | default(0) }}
+          clones_14d: >
+            {{ gh.clones.count if gh is defined and gh.clones else this.attributes.clones_14d | default(0) }}
+          clone_uniques_14d: >
+            {{ gh.clones.uniques if gh is defined and gh.clones else this.attributes.clone_uniques_14d | default(0) }}
+          referrers: >
+            {{ gh.referrers if gh is defined and gh.referrers is list else this.attributes.referrers | default([]) }}
+          paths: >
+            {{ gh.paths if gh is defined and gh.paths is list else this.attributes.paths | default([]) }}
+          history: >
+            {% set old = this.attributes.history if this.attributes.history is mapping else {} %}
+            {% set v = gh.views.views if gh is defined and gh.views else [] %}
+            {% set c = gh.clones.clones if gh is defined and gh.clones else [] %}
+            {% set vk = v | map(attribute='timestamp') | map('regex_replace', 'T.*$', '') | list %}
+            {% set ck = c | map(attribute='timestamp') | map('regex_replace', 'T.*$', '') | list %}
+            {% set vd = dict(zip(vk, v)) %}
+            {% set cd = dict(zip(ck, c)) %}
+            {% set ns = namespace(items=old.items() | list) %}
+            {% for day in (vk + ck) | unique | list %}
+              {% set o = old.get(day, [0, 0, 0, 0]) %}
+              {% set e = vd.get(day) %}
+              {% set f = cd.get(day) %}
+              {% set ns.items = ns.items + [(day, [
+                e.count if e else o[0], e.uniques if e else o[1],
+                f.count if f else o[2], f.uniques if f else o[3]])] %}
+            {% endfor %}
+            {{ dict((dict(ns.items).items() | sort)[-90:]) }}
+          errors: "{{ gh.errors if gh is defined else ['Skript ohne Antwort'] }}"
+          updated: "{{ now().isoformat() }}"
