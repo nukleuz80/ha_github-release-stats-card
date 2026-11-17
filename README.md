@@ -1,6 +1,6 @@
 # GitHub Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.4.2-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.5.0-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇩🇪 [Deutsche Version](README_de.md)
@@ -27,7 +27,7 @@ A Lovelace card for Home Assistant with the statistics of your GitHub repositori
 ## Installation
 
 1. Download [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) and copy it to `/config/www/`.
-2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.4.2` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
+2. Under **Settings → Dashboards → ⋮ → Resources**, add `/local/github-release-stats-card.js?v=1.5.0` as a **JavaScript module**. If your resources are managed in YAML, add it to `lovelace.yaml` and restart Home Assistant.
 3. Reload the browser. When you update the file, raise `?v=` so browsers load the new version.
 
 ## Configuration
@@ -53,6 +53,7 @@ repositories:
 | `show_search` | `true` | Search bar on top |
 | `show_details` | `true` | Stars, forks, issues, commits and last push |
 | `show_activity` | `true` | Commits of the last 12 weeks |
+| `downloads_today` | `{}` | Sensor with today's downloads per repository, e.g. `owner/repo: sensor.x`; `false` turns it off |
 | `show_traffic` | `true` | Views & clones, once a matching sensor exists |
 | `traffic_days` | `30` | Days in the traffic chart (7 to 90) |
 | `show_wiki` | `false` | Wiki section: recently changed pages (one request per update) |
@@ -90,10 +91,44 @@ Only pinned repositories are counted, a search only shows the totals.
 
 Only files attached to a release (assets) are counted. The source code archives that GitHub adds to every release are not. HACS downloads those archives for integrations unless the repository sets `zip_release` in its `hacs.json` and attaches a ZIP to every release. Without that, HACS installs do not show up here.
 
+## Exact downloads today (optional)
+
+Without help the card counts "today" from the totals it noted the last time it was open, so a count taken long before midnight shows as `heute*`. A Home Assistant sensor makes it exact: a REST sensor sums `download_count` of all release files, and a daily utility meter resets it at midnight.
+
+```yaml
+# rest.yaml
+- resource: https://api.github.com/repos/owner/my-repo/releases?per_page=100
+  scan_interval: 900
+  headers:
+    Authorization: !secret github_stats_token   # "Bearer ghp_…", optional
+    Accept: application/vnd.github+json
+  sensor:
+    - name: GitHub Downloads my-repo
+      unique_id: github_downloads_owner_my_repo
+      state_class: total_increasing
+      unit_of_measurement: Downloads
+      value_template: >-
+        {% set ns = namespace(n=0) %}
+        {% for release in value_json %}
+          {% for asset in release.assets %}
+            {% set ns.n = ns.n + asset.download_count %}
+          {% endfor %}
+        {% endfor %}
+        {{ ns.n }}
+
+# utility_meter.yaml
+github_downloads_my_repo_heute:
+  source: sensor.github_downloads_my_repo
+  cycle: daily
+```
+
+The card picks up `sensor.github_downloads_<repo>_heute` (or `sensor.github_downloads_<owner>_<repo>_heute`) by itself; any other name goes into `downloads_today`. The number per release stays the card's own count.
+
 ## Version history & changelog
 
 | Version | Date | Highlights |
 | :--- | :--- | :--- |
+| 1.5.0 | 2026-11-17 | Exact downloads today from a Home Assistant sensor (daily utility meter), found by name or set in `downloads_today` |
 | 1.4.2 | 2026-11-12 | Readable names for popular pages (GitHub now sends only paths as titles); views and clones each on their own chart scale; chart covers only recorded days |
 | 1.4.1 | 2026-11-12 | Renamed to GitHub Stats (card type, file and repository stay the same) |
 | 1.4.0 | 2026-11-12 | Views & clones (views, clones, referrers, popular pages, daily chart) through a Home Assistant sensor with a token; wiki section with recently changed and most read pages |

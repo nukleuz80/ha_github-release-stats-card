@@ -1,6 +1,6 @@
 # GitHub Stats Card
 
-[![Version](https://img.shields.io/badge/version-1.4.2-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
+[![Version](https://img.shields.io/badge/version-1.5.0-8839ef.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/releases)
 [![Validate](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml/badge.svg)](https://github.com/nukleuz80/ha_github-release-stats-card/actions/workflows/validate.yml)
 
 🇬🇧 [English version](README.md)
@@ -25,7 +25,7 @@ Eine Lovelace-Karte für Home Assistant mit den Statistiken deiner GitHub-Reposi
 ## Installation
 
 1. [`github-release-stats-card.js`](https://raw.githubusercontent.com/nukleuz80/ha_github-release-stats-card/main/github-release-stats-card.js) herunterladen und nach `/config/www/` kopieren.
-2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.4.2` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
+2. Unter **Einstellungen → Dashboards → ⋮ → Ressourcen** `/local/github-release-stats-card.js?v=1.5.0` als **JavaScript-Modul** hinzufügen. Werden die Ressourcen in YAML verwaltet, in `lovelace.yaml` eintragen und Home Assistant neu starten.
 3. Den Browser neu laden. Nach einem Update `?v=` hochzählen, damit Browser die neue Version laden.
 
 ## Konfiguration
@@ -51,6 +51,7 @@ repositories:
 | `show_search` | `true` | Suchleiste oben |
 | `show_details` | `true` | Sterne, Forks, Issues, Commits und letzter Push |
 | `show_activity` | `true` | Commits der letzten 12 Wochen |
+| `downloads_today` | `{}` | Sensor mit den heutigen Downloads je Repository, z. B. `owner/repo: sensor.x`; `false` schaltet ihn ab |
 | `show_traffic` | `true` | Besucher & Clones, sobald ein passender Sensor existiert |
 | `traffic_days` | `30` | Tage im Traffic-Diagramm (7 bis 90) |
 | `show_wiki` | `false` | Wiki-Bereich: zuletzt geänderte Seiten (eine Abfrage pro Aktualisierung) |
@@ -88,10 +89,44 @@ Gezählt werden nur angeheftete Repositories, eine Suche zeigt nur die Gesamtzah
 
 Gezählt werden nur Dateien, die an einem Release hängen. Die Quellcode-Archive, die GitHub an jedes Release hängt, zählen nicht. Genau die lädt HACS bei Integrationen, außer das Repository setzt `zip_release` in seiner `hacs.json` und hängt an jedes Release eine ZIP-Datei. Sonst erscheinen HACS-Installationen hier nicht.
 
+## Exakte Downloads heute (optional)
+
+Ohne Hilfe zählt die Karte „heute“ ab den Summen, die sie beim letzten Öffnen notiert hat. Liegt diese Zählung lange vor Mitternacht, steht dort `heute*`. Ein Home-Assistant-Sensor macht die Zahl exakt: Ein REST-Sensor summiert `download_count` aller Release-Dateien, ein täglicher Verbrauchszähler (Utility Meter) setzt ihn um Mitternacht zurück.
+
+```yaml
+# rest.yaml
+- resource: https://api.github.com/repos/owner/my-repo/releases?per_page=100
+  scan_interval: 900
+  headers:
+    Authorization: !secret github_stats_token   # "Bearer ghp_…", optional
+    Accept: application/vnd.github+json
+  sensor:
+    - name: GitHub Downloads my-repo
+      unique_id: github_downloads_owner_my_repo
+      state_class: total_increasing
+      unit_of_measurement: Downloads
+      value_template: >-
+        {% set ns = namespace(n=0) %}
+        {% for release in value_json %}
+          {% for asset in release.assets %}
+            {% set ns.n = ns.n + asset.download_count %}
+          {% endfor %}
+        {% endfor %}
+        {{ ns.n }}
+
+# utility_meter.yaml
+github_downloads_my_repo_heute:
+  source: sensor.github_downloads_my_repo
+  cycle: daily
+```
+
+Die Karte findet `sensor.github_downloads_<repo>_heute` (oder `sensor.github_downloads_<owner>_<repo>_heute`) von selbst, jeder andere Name gehört in `downloads_today`. Die Zahl pro Release bleibt die eigene Zählung der Karte.
+
 ## Versionshistorie & Changelog
 
 | Version | Datum | Highlights |
 | :--- | :--- | :--- |
+| 1.5.0 | 17.11.2026 | Exakte Downloads heute aus einem Home-Assistant-Sensor (täglicher Verbrauchszähler), per Name gefunden oder in `downloads_today` gesetzt |
 | 1.4.2 | 12.11.2026 | Lesbare Namen für beliebte Seiten (GitHub schickt als Titel nur noch Pfade), Aufrufe und Clones mit eigener Skala im Diagramm, Diagramm nur über aufgezeichnete Tage |
 | 1.4.1 | 12.11.2026 | Neuer Name GitHub Stats (Kartentyp, Datei und Repository bleiben gleich) |
 | 1.4.0 | 12.11.2026 | Besucher & Clones (Aufrufe, Clones, Herkunft, beliebte Seiten, Tagesdiagramm) über einen Home-Assistant-Sensor mit Token, Wiki-Bereich mit zuletzt geänderten und meistgelesenen Seiten |

@@ -12,7 +12,10 @@
  * "Heute" compares the current totals with the last count taken before
  * midnight. GitHub only reports totals, so the card notes the totals each
  * time it loads and keeps one count per day for 31 days, stored per Home
- * Assistant user (frontend user data) so all devices share it.
+ * Assistant user (frontend user data) so all devices share it. A Home
+ * Assistant sensor counting today's downloads (a daily utility meter, by
+ * default sensor.github_downloads_<repo>_heute, or set per repository in
+ * downloads_today) gives the exact number instead.
  *
  * Optional traffic (views, clones, referrers, popular pages) comes from a
  * Home Assistant sensor with the attribute github_traffic: true, filled with
@@ -24,7 +27,7 @@
  * cached per repository and revalidated with ETags, so a reload within the
  * refresh time costs no API quota (60 requests per hour without a token).
  */
-const CARD_VERSION = "1.4.2";
+const CARD_VERSION = "1.5.0";
 const API = "https://api.github.com";
 const CACHE_PREFIX = "grs-card:";
 const HISTORY_KEY = "github-release-stats-card-history";
@@ -203,6 +206,26 @@ export const countToday = (history, summary, now = Date.now()) => {
     since,
     exact: since <= midnight && midnight - since <= 2 * 3600000,
     fromToday: since >= midnight,
+  };
+};
+
+/** Entity id slug of a repository name, "ha_brainstorm" for "ha-brainstorm". */
+const slug = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+/**
+ * Today's downloads from a Home Assistant sensor, merged into the count of
+ * the card: the sensor gives the exact total, the releases stay as counted.
+ */
+export const todayFromSensor = (today, state) => {
+  if (!state || state.state === "" || state.state == null) return today;
+  const value = Number(state.state);
+  if (!Number.isFinite(value)) return today;
+  return {
+    ...(today || { releases: {}, since: null }),
+    total: Math.max(0, Math.round(value)),
+    exact: true,
+    fromToday: false,
+    sensor: state.entity_id,
   };
 };
 
@@ -416,6 +439,7 @@ class GithubReleaseStatsCard extends HTMLElement {
       releases: Math.max(1, Number(config.releases) || DEFAULTS.releases),
       refresh: Math.max(5, Number(config.refresh) || DEFAULTS.refresh),
       layout: config.layout === "modern" ? "modern" : "classic",
+      downloads_today: config.downloads_today && typeof config.downloads_today === "object" ? config.downloads_today : {},
       traffic_days: Math.min(90, Math.max(7, Number(config.traffic_days) || DEFAULTS.traffic_days)),
     };
     this._trafficIds.clear();
@@ -433,8 +457,8 @@ class GithubReleaseStatsCard extends HTMLElement {
       this._loadAll();
       return;
     }
-    // Redraw when a traffic sensor got new numbers
-    const sig = this._trafficSignature();
+    // Redraw when a traffic or downloads sensor got new numbers
+    const sig = `${this._trafficSignature()}#${this._todaySignature()}`;
     if (sig !== this._trafficSig) {
       this._trafficSig = sig;
       this._renderBody();
@@ -674,6 +698,28 @@ class GithubReleaseStatsCard extends HTMLElement {
     return found || null;
   }
 
+  /** The Home Assistant sensor counting today's downloads of a repository, if any. */
+  _todayEntity(key) {
+    const states = this._hass?.states;
+    if (!states) return null;
+    const k = key.toLowerCase();
+    const set = Object.entries(this._config.downloads_today).find(([repo]) => repo.toLowerCase() === k)?.[1];
+    if (set === false || set === null) return null;
+    if (typeof set === "string" && set) return states[set] || null;
+    const [owner, repo] = k.split("/");
+    return (
+      states[`sensor.github_downloads_${slug(repo)}_heute`] ||
+      states[`sensor.github_downloads_${slug(owner)}_${slug(repo)}_heute`] ||
+      null
+    );
+  }
+
+  _todaySignature() {
+    const keys = [...this._config.repositories];
+    if (this._search?.repo) keys.push(`${this._search.owner}/${this._search.repo}`);
+    return keys.map((k) => this._todayEntity(k)?.state ?? "").join("|");
+  }
+
   _trafficSignature() {
     if (!this._config.show_traffic) return "";
     const keys = [...this._config.repositories];
@@ -897,11 +943,13 @@ class GithubReleaseStatsCard extends HTMLElement {
     const all = this._showAll.has(key);
     const shown = all ? list : list.slice(0, this._config.releases);
 
-    const today = this._history ? countToday(this._history[key], s) : null;
+    const today = todayFromSensor(this._history ? countToday(this._history[key], s) : null, this._todayEntity(key));
     let todayHtml = "";
     if (today) {
-      const title = today.exact
-        ? "Downloads seit Mitternacht"
+      const title = today.sensor
+        ? `Downloads seit Mitternacht laut ${today.sensor}`
+        : today.exact
+          ? "Downloads seit Mitternacht"
         : today.fromToday
           ? `Gezählt seit ${time(today.since)} Uhr, als die Karte heute zum ersten Mal geladen hat`
           : `Gezählt seit ${date(new Date(today.since).toISOString())}, ${time(today.since)} Uhr, als die Karte zuletzt geladen hat`;
@@ -1212,7 +1260,7 @@ class GithubReleaseStatsCard extends HTMLElement {
     const all = this._showAll.has(key);
     const shown = all ? list : list.slice(0, this._config.releases);
 
-    const today = this._history ? countToday(this._history[key], s) : null;
+    const today = todayFromSensor(this._history ? countToday(this._history[key], s) : null, this._todayEntity(key));
     const d = this._details.get(key);
     const i = d?.info || {};
 
@@ -1231,8 +1279,10 @@ class GithubReleaseStatsCard extends HTMLElement {
     let todayTitle = "";
     let todayPill = "";
     if (today) {
-      todayTitle = today.exact
-        ? "Downloads seit Mitternacht"
+      todayTitle = today.sensor
+        ? `Downloads seit Mitternacht laut ${today.sensor}`
+        : today.exact
+          ? "Downloads seit Mitternacht"
         : today.fromToday
           ? `Gezählt seit ${time(today.since)} Uhr`
           : `Gezählt seit ${date(new Date(today.since).toISOString())}, ${time(today.since)} Uhr`;
